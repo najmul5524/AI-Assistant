@@ -159,6 +159,7 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     file_path = REPORTS_DIR / f"{sanitized_prefix}_{timestamp}.pdf"
 
     archive = pymupdf.Archive(str(FONTS_DIR))
+    archive.add(str(REPORTS_DIR))
     html = _markdown_to_html(title, text_content)
 
     writer = pymupdf.DocumentWriter(str(file_path))

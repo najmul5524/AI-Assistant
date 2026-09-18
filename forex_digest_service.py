@@ -13,10 +13,11 @@ from typing import Optional, Dict, Any, List
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from config import DEFAULT_TIMEZONE, FOREX_CURRENCIES
+from config import DEFAULT_TIMEZONE, FOREX_CURRENCIES, REPORTS_DIR
 import forex_service
 import forex_news_monitor
 import report_generator
+import chart_generator
 import database
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -184,45 +185,6 @@ Make it razor-sharp, actionable, and mathematically logical for a professional d
         logger.error(f"Failed to generate daily digest: {e}")
         return f"❌ দৈনিক ডাইজেস্ট ও পূর্বাভাস তৈরি করা যায়নি: {str(e)}"
 
-def generate_weekly_charts_svg() -> str:
-    """
-    Generates an institutional weekly multi-asset performance, range & currency strength SVG chart.
-    Zero external dependencies, renders crisp vector in PDF.
-    """
-    assets = [
-        {"name": "Gold (XAU/USD)", "bias": "BULLISH", "color": "#10b981", "s": "$2,670", "r": "$2,750", "pct": 78},
-        {"name": "Silver (XAG/USD)", "bias": "RANGE", "color": "#f59e0b", "s": "$31.20", "r": "$32.80", "pct": 52},
-        {"name": "S&P 500 Futures", "bias": "BULLISH", "color": "#10b981", "s": "5,660", "r": "5,800", "pct": 72},
-        {"name": "Crude Oil (WTI)", "bias": "BEARISH", "color": "#ef4444", "s": "$67.80", "r": "$72.50", "pct": 34},
-        {"name": "EUR/USD", "bias": "BEARISH", "color": "#ef4444", "s": "1.1050", "r": "1.1220", "pct": 36},
-        {"name": "GBP/USD", "bias": "BULLISH", "color": "#10b981", "s": "1.3190", "r": "1.3380", "pct": 70},
-        {"name": "USD/JPY", "bias": "RANGE", "color": "#f59e0b", "s": "141.20", "r": "144.50", "pct": 50},
-    ]
-
-    svg_lines = [
-        '<svg width="515" height="310" xmlns="http://www.w3.org/2000/svg" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; margin: 12px 0;">',
-        '  <text x="15" y="24" font-family="sans-serif" font-size="12" font-weight="bold" fill="#0f172a">📊 সাপ্তাহিক মার্কেট রেঞ্জ, ডিরেকশন ও পারফরম্যান্স ম্যাট্রিক্স (Weekly Asset Matrix)</text>',
-        '  <line x1="15" y1="34" x2="500" y2="34" stroke="#cbd5e1" stroke-width="1"/>',
-    ]
-
-    y = 58
-    for a in assets:
-        svg_lines.append(f'  <text x="18" y="{y}" font-family="sans-serif" font-size="10" font-weight="bold" fill="#1e293b">{a["name"]}</text>')
-        svg_lines.append(f'  <rect x="150" y="{y-11}" width="55" height="15" rx="3" fill="{a["color"]}" />')
-        svg_lines.append(f'  <text x="177" y="{y}" font-family="sans-serif" font-size="8.5" font-weight="bold" fill="#ffffff" text-anchor="middle">{a["bias"]}</text>')
-        svg_lines.append(f'  <rect x="220" y="{y-9}" width="160" height="11" rx="4" fill="#e2e8f0" />')
-        bar_w = int(160 * (a["pct"] / 100))
-        svg_lines.append(f'  <rect x="220" y="{y-9}" width="{bar_w}" height="11" rx="4" fill="{a["color"]}" opacity="0.85" />')
-        svg_lines.append(f'  <text x="390" y="{y}" font-family="sans-serif" font-size="9" fill="#64748b">S: {a["s"]}</text>')
-        svg_lines.append(f'  <text x="450" y="{y}" font-family="sans-serif" font-size="9" font-weight="bold" fill="#0f172a">R: {a["r"]}</text>')
-        y += 31
-
-    # Currency relative strength summary
-    svg_lines.append('  <line x1="15" y1="272" x2="500" y2="272" stroke="#e2e8f0" stroke-width="1"/>')
-    svg_lines.append('  <text x="18" y="293" font-family="sans-serif" font-size="9.5" fill="#475569">💪 Currency Strength: USD 🟢 Bullish | GBP 🟢 Strong | EUR 🔴 Weak | JPY 🟡 Neutral | CAD 🔴 Soft</text>')
-    svg_lines.append('</svg>')
-    return "\n".join(svg_lines)
-
 def generate_weekly_intelligence_report(filename_prefix: str = "Weekly_Forex_Report") -> Path:
     """
     Generates a full institutional multi-page weekly intelligence PDF report,
@@ -305,9 +267,15 @@ Use rigorous financial terminology, clean structure, and insightful analysis."""
     logger.info("Generating comprehensive weekly forex report text via Multi-Tier LLM...")
     report_text, provider_used, _ = llm.generate_response(prompt=prompt)
 
-    # Prepend the illustrated vector SVG chart to the PDF story
-    charts_svg = generate_weekly_charts_svg()
-    combined_content = f"{charts_svg}\n\n{report_text}"
+    # Generate high-resolution institutional chart PNG for embedding into PyMuPDF Story
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    chart_file = REPORTS_DIR / f"weekly_chart_{timestamp}.png"
+    chart_generator.create_market_range_chart(
+        output_path=chart_file,
+        chart_title="WEEKLY ASSET RANGE & MACRO DIRECTION MATRIX"
+    )
+    chart_html = f'<div style="text-align: center; margin: 10px 0;"><img src="{chart_file.name}" width="515" /></div>'
+    combined_content = f"{chart_html}\n\n{report_text}"
 
     title = "সাপ্তাহিক ফরেক্স ও মাল্টি-অ্যাসেট ইন্টেলিজেন্স রিপোর্ট"
     pdf_path = report_generator.generate_pdf_report(
@@ -318,52 +286,22 @@ Use rigorous financial terminology, clean structure, and insightful analysis."""
     logger.info(f"Weekly Forex illustrated PDF report generated at: {pdf_path}")
     return pdf_path
 
-def generate_market_charts_svg() -> str:
-    """
-    Generates a modern institutional multi-asset price range & bias SVG vector chart.
-    Zero external dependencies, crystal clear in PDF, pure resolution-independent vector.
-    """
-    assets = [
-        {"name": "Gold (XAU/USD)", "bias": "BULLISH", "color": "#10b981", "s": "$2,685", "r": "$2,745", "pct": 75},
-        {"name": "Silver (XAG/USD)", "bias": "RANGE", "color": "#f59e0b", "s": "$31.40", "r": "$32.60", "pct": 50},
-        {"name": "S&P 500 Futures", "bias": "BULLISH", "color": "#10b981", "s": "5,690", "r": "5,785", "pct": 70},
-        {"name": "Crude Oil (WTI)", "bias": "BEARISH", "color": "#ef4444", "s": "$68.20", "r": "$72.10", "pct": 35},
-        {"name": "EUR/USD", "bias": "BEARISH", "color": "#ef4444", "s": "1.1070", "r": "1.1210", "pct": 38},
-        {"name": "GBP/USD", "bias": "BULLISH", "color": "#10b981", "s": "1.3210", "r": "1.3365", "pct": 68},
-        {"name": "USD/JPY", "bias": "RANGE", "color": "#f59e0b", "s": "141.50", "r": "143.90", "pct": 52},
-    ]
-
-    svg_lines = [
-        '<svg width="515" height="280" xmlns="http://www.w3.org/2000/svg" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; margin: 12px 0;">',
-        '  <text x="15" y="24" font-family="sans-serif" font-size="12" font-weight="bold" fill="#0f172a">📊 টেকনিক্যাল প্রাইস রেঞ্জ ও ডিরেকশন চার্ট (Key Levels & Direction Matrix)</text>',
-        '  <line x1="15" y1="34" x2="500" y2="34" stroke="#cbd5e1" stroke-width="1"/>',
-    ]
-
-    y = 58
-    for a in assets:
-        svg_lines.append(f'  <text x="18" y="{y}" font-family="sans-serif" font-size="10.5" font-weight="bold" fill="#1e293b">{a["name"]}</text>')
-        svg_lines.append(f'  <rect x="150" y="{y-11}" width="55" height="15" rx="3" fill="{a["color"]}" />')
-        svg_lines.append(f'  <text x="177" y="{y}" font-family="sans-serif" font-size="8.5" font-weight="bold" fill="#ffffff" text-anchor="middle">{a["bias"]}</text>')
-        svg_lines.append(f'  <rect x="220" y="{y-9}" width="160" height="11" rx="4" fill="#e2e8f0" />')
-        bar_w = int(160 * (a["pct"] / 100))
-        svg_lines.append(f'  <rect x="220" y="{y-9}" width="{bar_w}" height="11" rx="4" fill="{a["color"]}" opacity="0.85" />')
-        svg_lines.append(f'  <text x="390" y="{y}" font-family="sans-serif" font-size="9" fill="#64748b">S: {a["s"]}</text>')
-        svg_lines.append(f'  <text x="450" y="{y}" font-family="sans-serif" font-size="9" font-weight="bold" fill="#0f172a">R: {a["r"]}</text>')
-        y += 31
-
-    svg_lines.append('</svg>')
-    return "\n".join(svg_lines)
-
 def generate_daily_forecast_pdf(target_date: Optional[datetime.date] = None, filename_prefix: str = "Market_Forecast") -> Path:
     """
     Generates a full illustrated Next-Day Market Movement Forecast PDF with embedded
     technical price range and sentiment charts.
     """
     forecast_text = generate_daily_digest(target_date)
-    chart_svg = generate_market_charts_svg()
 
-    # Prepend the illustrated vector chart right beneath the header
-    combined_content = f"{chart_svg}\n\n{forecast_text}"
+    # Generate high-resolution institutional chart PNG for embedding into PyMuPDF Story
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    chart_file = REPORTS_DIR / f"daily_chart_{timestamp}.png"
+    chart_generator.create_market_range_chart(
+        output_path=chart_file,
+        chart_title="DAILY TECHNICAL RANGE & DIRECTION MATRIX"
+    )
+    chart_html = f'<div style="text-align: center; margin: 10px 0;"><img src="{chart_file.name}" width="515" /></div>'
+    combined_content = f"{chart_html}\n\n{forecast_text}"
 
     title = "দৈনিক মার্কেট পূর্বাভাস ও প্রাইস মুভমেন্ট ডাইজেস্ট"
     pdf_path = report_generator.generate_pdf_report(

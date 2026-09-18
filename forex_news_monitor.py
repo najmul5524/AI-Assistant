@@ -208,24 +208,36 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
     for art in unseen:
         logger.info(f"Analyzing new Forex story: {art['title']}")
         analysis = analyze_forex_news_with_ai(art["title"], art["description"])
-        alert_msg = format_news_telegram_alert(art, analysis)
+        
+        # Check severity filter: Only dispatch instant alert if High/Medium Impact or critical market catalyst
+        title_lower = art["title"].lower()
+        is_critical_keyword = any(k in title_lower for k in [
+            "rate", "hike", "cut", "cpi", "fomc", "fed", "ecb", "boj", "boe",
+            "inflation", "nfp", "gdp", "war", "tariff", "breaking", "urgent", "sanction"
+        ])
+        is_high_analysis = "high" in analysis.lower() or "🔴" in analysis or "🟠" in analysis
 
-        if telegram_context and hasattr(telegram_context, "bot"):
-            for uid in ALLOWED_USER_IDS:
-                try:
-                    import asyncio
-                    asyncio.create_task(
-                        telegram_context.bot.send_message(
-                            chat_id=uid,
-                            text=alert_msg,
-                            parse_mode="Markdown"
+        if is_critical_keyword or is_high_analysis:
+            alert_msg = format_news_telegram_alert(art, analysis)
+            if telegram_context and hasattr(telegram_context, "bot"):
+                for uid in ALLOWED_USER_IDS:
+                    try:
+                        import asyncio
+                        asyncio.create_task(
+                            telegram_context.bot.send_message(
+                                chat_id=uid,
+                                text=alert_msg,
+                                parse_mode="Markdown"
+                            )
                         )
-                    )
-                except Exception as send_err:
-                    logger.warning(f"Error sending via bot context: {send_err}")
-                    send_telegram_direct(alert_msg)
+                    except Exception as send_err:
+                        logger.warning(f"Error sending via bot context: {send_err}")
+                        send_telegram_direct(alert_msg)
+            else:
+                send_telegram_direct(alert_msg)
+            logger.info(f"Dispatched high-impact alert for: {art['title']}")
         else:
-            send_telegram_direct(alert_msg)
+            logger.info(f"Filtered low-impact news from instant alert (saved for Daily Wrap-up): {art['title']}")
 
         database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
         processed_count += 1

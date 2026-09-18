@@ -44,6 +44,7 @@ import email_service
 import forex_service
 import google_calendar_service
 import forex_news_monitor
+import forex_digest_service
 from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -162,6 +163,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"আমি আপনার দৈনন্দিন যেকোনো কাজ, ইমেইল, রিপোর্ট তৈরি, ওয়েব সার্চ ও প্ল্যানিংয়ে সাহায্য করতে পারি।\n\n"
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
+        f"• `/digest` - সারাদিনের ফরেক্স খবরের একীভূত ডাইজেস্ট (Daily Wrap-up)\n"
+        f"• `/forex_pdf` - পূর্ণাঙ্গ সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট\n"
         f"• `/news` - ব্রেকিং ফরেক্স নিউজ ও লাইভ এআই মার্কেট এনালাইসিস\n"
         f"• `/forex` - আজকের গুরুত্বপূর্ণ ফরেক্স ক্যালেন্ডার দেখা\n"
         f"• `/forex_sync` - Google Calendar-এ নিউজ রিমাইন্ডার সিঙ্ক করা\n"
@@ -187,6 +190,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
         f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা কাজ সরাসরি মেসেজ হিসেবে লিখুন।\n"
+        f"• `/digest`: সারাদিনের সমস্ত ফরেক্স নিউজের একীভূত ম্যাক্রো ডাইজেস্ট (কারেন্সি স্ট্রেন্থ, বিজয়ী/পরাজিত পেয়ার, আগামীকালের সেশন)।\n"
+        f"• `/forex_pdf`: সরাসরি পূর্ণাঙ্গ প্রাতিষ্ঠানিক সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট তৈরি ও ডাউনলোড।\n"
         f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)।\n"
         f"• `/forex`: আজকের High & Medium Impact ফরেক্স ক্যালেন্ডার নিউজ দেখা। (`/forex all` দিয়ে পুরো সপ্তাহেরটা দেখা যাবে)\n"
         f"• `/forex_sync`: আজকের ফরেক্স নিউজ Google Calendar-এ রিমাইন্ডার অ্যালার্টসহ স্বয়ংক্রিয়ভাবে সিঙ্ক করা।\n"
@@ -523,6 +528,58 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await status_msg.edit_text(alert_msg)
 
+async def digest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /digest - Generates a consolidated daily macroeconomic market wrap-up."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    status_msg = await update.message.reply_text("⏳ আজকের সমস্ত ফরেক্স ইভেন্ট ও খবরের সমন্বিত এক্সিকিউটিভ ডাইজেস্ট তৈরি করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
+
+    try:
+        loop = asyncio.get_running_loop()
+        digest_text = await loop.run_in_executor(None, forex_digest_service.generate_daily_digest)
+        try:
+            await status_msg.edit_text(digest_text, parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            await status_msg.edit_text(digest_text)
+    except Exception as e:
+        logger.error(f"Failed to generate digest: {e}")
+        await status_msg.edit_text(f"❌ ডাইজেস্ট তৈরিতে সমস্যা হয়েছে: {str(e)}")
+
+async def forex_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /forex_pdf - Generates and dispatches a comprehensive weekly Forex intelligence PDF report."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_DOCUMENT)
+    status_msg = await update.message.reply_text("⏳ প্রাতিষ্ঠানিক সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট তৈরি হচ্ছে, অনুগ্রহ করে একটু অপেক্ষা করুন...", parse_mode=ParseMode.MARKDOWN)
+
+    try:
+        loop = asyncio.get_running_loop()
+        pdf_path = await loop.run_in_executor(None, forex_digest_service.generate_weekly_intelligence_report)
+
+        caption = "📊 *সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স রিপোর্ট*\n\n✅ গত সপ্তাহের পর্যালোচনা ও আগামী সপ্তাহের প্রাতিষ্ঠানিক রোডম্যাপ প্রস্তুত সম্পন্ন!"
+        with open(pdf_path, "rb") as doc_file:
+            await context.bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=doc_file,
+                filename=pdf_path.name,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Failed to generate forex PDF report: {e}")
+        await update.message.reply_text(f"❌ ফরেক্স রিপোর্ট তৈরিতে সমস্যা হয়েছে: {str(e)}")
+
 # ----------------- Message Handler ----------------- #
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -687,6 +744,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         database.add_message(user.id, "assistant", "[Forex Breaking News & Analysis displayed]")
         return
 
+    # Check for natural language digest triggers
+    if any(k in lower_text for k in ["ডাইজেস্ট", "digest", "সারসংক্ষেপ", "wrapup", "wrap up", "আজকের সারাংশ", "মার্কেট র্যাপ"]):
+        await digest_command(update, context)
+        database.add_message(user.id, "user", text)
+        database.add_message(user.id, "assistant", "[Daily Forex Digest displayed]")
+        return
+
+    # Check for natural language forex PDF report triggers
+    if any(k in lower_text for k in ["forex pdf", "forex report", "ফরেক্স পিডিএফ", "সাপ্তাহিক রিপোর্ট", "ফরেক্স রিপোর্ট"]):
+        await forex_pdf_command(update, context)
+        database.add_message(user.id, "user", text)
+        database.add_message(user.id, "assistant", "[Forex Intelligence PDF Report sent]")
+        return
+
     # Check for natural language Forex calendar triggers
     lower_text = text.lower()
     forex_keywords = ["forex", "ফরেক্স", "forexfactory", "forex factory", "economic calendar", "ইকোনমিক ক্যালেন্ডার"]
@@ -811,6 +882,44 @@ async def scheduled_news_monitor_job(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in scheduled_news_monitor_job: {e}")
 
+async def daily_evening_digest_job(context: ContextTypes.DEFAULT_TYPE):
+    """Daily evening job at 22:00 (10:00 PM Asia/Dhaka) dispatching consolidated Daily Forex Evening Wrap-up."""
+    logger.info("Executing scheduled Daily Evening Forex Wrap-up...")
+    try:
+        loop = asyncio.get_running_loop()
+        digest_text = await loop.run_in_executor(None, forex_digest_service.generate_daily_digest)
+        target_uids = ALLOWED_USER_IDS if ALLOWED_USER_IDS else []
+        for uid in target_uids:
+            try:
+                await context.bot.send_message(chat_id=uid, text=digest_text, parse_mode=ParseMode.MARKDOWN)
+            except Exception as e:
+                logger.warning(f"Could not send evening digest to {uid}: {e}")
+    except Exception as e:
+        logger.error(f"Error in daily_evening_digest_job: {e}")
+
+async def sunday_weekly_report_job(context: ContextTypes.DEFAULT_TYPE):
+    """Weekly job on Sundays at 20:00 (8:00 PM Asia/Dhaka) generating institutional Weekly Intelligence PDF."""
+    logger.info("Executing scheduled Sunday Weekly Forex Intelligence Report...")
+    try:
+        loop = asyncio.get_running_loop()
+        pdf_path = await loop.run_in_executor(None, forex_digest_service.generate_weekly_intelligence_report)
+        caption = "📊 *সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স রিপোর্ট*\n\n✅ আগামী সপ্তাহের জন্য আপনার পূর্ণাঙ্গ প্রাতিষ্ঠানিক গাইডলাইন ও রোডম্যাপ প্রস্তুত!"
+        target_uids = ALLOWED_USER_IDS if ALLOWED_USER_IDS else []
+        for uid in target_uids:
+            try:
+                with open(pdf_path, "rb") as doc_file:
+                    await context.bot.send_document(
+                        chat_id=uid,
+                        document=doc_file,
+                        filename=pdf_path.name,
+                        caption=caption,
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+            except Exception as e:
+                logger.warning(f"Could not send weekly PDF report to {uid}: {e}")
+    except Exception as e:
+        logger.error(f"Error in sunday_weekly_report_job: {e}")
+
 # ----------------- Main Launcher ----------------- #
 
 def main():
@@ -840,6 +949,8 @@ def main():
     app.add_handler(CommandHandler("forex", forex_command))
     app.add_handler(CommandHandler("forex_sync", forex_sync_command))
     app.add_handler(CommandHandler("news", news_command))
+    app.add_handler(CommandHandler("digest", digest_command))
+    app.add_handler(CommandHandler("forex_pdf", forex_pdf_command))
 
     # Register Text Message Handler
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
@@ -853,15 +964,34 @@ def main():
         app.job_queue.run_repeating(scheduled_news_monitor_job, interval=FOREX_NEWS_CHECK_INTERVAL, first=15)
         print(f"📡 24/7 Forex News Monitor activated (checking every {FOREX_NEWS_CHECK_INTERVAL}s / {FOREX_NEWS_CHECK_INTERVAL // 60}m).")
 
-        # Schedule daily Forex Sync & Morning Briefing
+        # Schedule daily morning Forex Sync (e.g. 06:30 AM)
         try:
             hour_str, min_str = FOREX_DAILY_SYNC_TIME.split(":")
             tz = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
             sync_time = datetime.time(hour=int(hour_str), minute=int(min_str), tzinfo=tz)
             app.job_queue.run_daily(daily_forex_sync_job, time=sync_time)
-            print(f"📈 Daily Forex sync scheduled for {FOREX_DAILY_SYNC_TIME} ({DEFAULT_TIMEZONE}).")
+            print(f"📈 Daily morning Forex sync scheduled for {FOREX_DAILY_SYNC_TIME} ({DEFAULT_TIMEZONE}).")
         except Exception as e:
             logger.warning(f"Could not schedule daily forex sync: {e}")
+
+        # Schedule Daily Evening Forex Wrap-up at 22:00 (10:00 PM Asia/Dhaka)
+        try:
+            tz = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+            evening_time = datetime.time(hour=22, minute=0, tzinfo=tz)
+            app.job_queue.run_daily(daily_evening_digest_job, time=evening_time)
+            print("🌙 Daily Evening Forex Wrap-up scheduled for 22:00 (Asia/Dhaka).")
+        except Exception as e:
+            logger.warning(f"Could not schedule daily evening digest: {e}")
+
+        # Schedule Sunday Weekly Forex Intelligence PDF Report at 20:00 (8:00 PM Asia/Dhaka)
+        # Note: In PTB run_daily, days=(6,) corresponds to Sunday (0=Mon, 1=Tue, ..., 6=Sun)
+        try:
+            tz = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+            sunday_time = datetime.time(hour=20, minute=0, tzinfo=tz)
+            app.job_queue.run_daily(sunday_weekly_report_job, time=sunday_time, days=(6,))
+            print("📅 Sunday Weekly Intelligence PDF report scheduled for Sunday 20:00 (Asia/Dhaka).")
+        except Exception as e:
+            logger.warning(f"Could not schedule sunday weekly report: {e}")
 
     # Start background cloud health-check server (for Render / Hugging Face Spaces)
     threading.Thread(target=start_health_server, daemon=True).start()

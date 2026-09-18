@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install curl and build tools
+# Install curl, build tools, and fallback true-type fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    fonts-dejavu-core \
+    fonts-freefont-ttf \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

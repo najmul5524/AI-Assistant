@@ -27,7 +27,10 @@ def _has_bengali(text: str) -> bool:
     """Returns True if string contains Bengali Unicode characters."""
     return any('\u0980' <= c <= '\u09ff' for c in text)
 
-EMOJI_PATTERN = re.compile(r'[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u200d\ufe0f]+', flags=re.UNICODE)
+EMOJI_PATTERN = re.compile(
+    r'[\U00010000-\U0010ffff\u2300-\u23ff\u25a0-\u25ff\u2600-\u27bf\u2b00-\u2bff\ufe00-\ufe0f]+',
+    flags=re.UNICODE
+)
 
 def _format_inline(text: str) -> str:
     """Formats inline bold and italic markdown tags safely."""
@@ -52,8 +55,8 @@ def _markdown_to_html(title: str, text_content: str) -> str:
             html_body.append(stripped)
             continue
 
-        # Strip emojis so Kalpurush font never renders broken tofu characters
-        clean_raw = EMOJI_PATTERN.sub('', stripped).strip()
+        # Strip emojis and unsupported symbols so Kalpurush font never renders broken tofu/boxes
+        clean_raw = EMOJI_PATTERN.sub('', stripped).replace('\u00a0', ' ').strip()
         if not clean_raw:
             continue
 
@@ -70,11 +73,11 @@ def _markdown_to_html(title: str, text_content: str) -> str:
             m = re.match(r'^(?:\*\*)?([১-৯\d]+[\.\)]\s*.*?)(?:\*\*)?$', clean_raw)
             h_text = _format_inline(m.group(1).rstrip(':').strip()) if m else _format_inline(clean_raw)
             html_body.append(f"<h2>{h_text}</h2>")
-        # 2. Bullets & Sub-bullets
+        # 2. Bullets & Sub-bullets (Using clean round bullet dots, strictly avoiding square box ▪)
         elif clean_raw.startswith("- ") or clean_raw.startswith("* ") or clean_raw.startswith("• "):
             b_text = _format_inline(clean_raw[2:].strip())
             if is_sub_bullet:
-                html_body.append(f'<div class="sub-bullet"><span class="sub-dot">▪</span> {b_text}</div>')
+                html_body.append(f'<div class="sub-bullet"><span class="sub-dot">•</span> {b_text}</div>')
             else:
                 html_body.append(f'<div class="bullet"><span class="dot">•</span> {b_text}</div>')
         # 3. Subheadings (short bold lines)
@@ -95,6 +98,14 @@ def _markdown_to_html(title: str, text_content: str) -> str:
 @font-face {{
     font-family: 'Kalpurush';
     src: url('kalpurush.ttf');
+    font-weight: normal;
+    font-style: normal;
+}}
+@font-face {{
+    font-family: 'Kalpurush';
+    src: url('kalpurush.ttf');
+    font-weight: bold;
+    font-style: normal;
 }}
 body {{
     font-family: 'Kalpurush', sans-serif;
@@ -172,7 +183,7 @@ p {{
 }}
 .sub-dot {{
     color: #64748b;
-    font-size: 8pt;
+    font-size: 9pt;
     line-height: 0;
     vertical-align: middle;
     margin-right: 5px;

@@ -360,7 +360,7 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"2. Key Insights & Current Landscape (মূল বিষয় ও বর্তমান অবস্থা)\n"
         f"3. In-Depth Analysis & Data Points (বিস্তারিত বিশ্লেষণ ও তথ্যাবলি)\n"
         f"4. Actionable Recommendations & Strategic Outlook (ভবিষ্যৎ সুপারিশ ও করণীয়)\n\n"
-        f"Use clean markdown headings (##, ###) and clean bullet points (- )."
+        f"Use clean markdown headings (##, ###) and clean bullet points (- ). Do not include raw emojis or pictograms in headings or bullets."
     )
 
     ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt)
@@ -689,7 +689,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"2. Current Market / Topic Overview & Key Highlights (বর্তমান অবস্থা ও মূল পর্যালোচনা)\n"
             f"3. In-Depth Analysis & Data Points (বিস্তারিত বিশ্লেষণ ও তথ্যাবলি)\n"
             f"4. Actionable Recommendations & Future Strategic Outlook (কৌশলগত সুপারিশ ও ভবিষ্যৎ সম্ভাবনা)\n\n"
-            f"Format using clear markdown headers (##, ###) and clean bullet points (- )."
+            f"Format using clear markdown headers (##, ###) and clean bullet points (- ). Do not include raw emojis or pictograms in headings or bullets."
         )
         ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt, context_data=search_data)
 

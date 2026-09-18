@@ -12,6 +12,7 @@ import datetime
 import zoneinfo
 import requests
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 from typing import List, Dict, Any, Optional
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -27,9 +28,12 @@ from llm_manager import MultiTierLLMManager
 
 logger = logging.getLogger(__name__)
 
-# Primary & Fallback RSS endpoints
+# Primary & Real-time RSS endpoints
 FF_GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q=site:forexfactory.com/news&hl=en-US&gl=US&ceid=US:en"
 FXSTREET_NEWS_RSS = "https://www.fxstreet.com/rss/news"
+
+# Maximum age for an article to be eligible for instant breaking news alerts
+MAX_BREAKING_NEWS_AGE_HOURS = 3.0
 
 _llm_instance: Optional[MultiTierLLMManager] = None
 
@@ -44,69 +48,80 @@ def generate_news_id(title: str) -> str:
     clean_str = title.strip().lower()
     return hashlib.sha256(clean_str.encode("utf-8")).hexdigest()[:24]
 
-def fetch_latest_forex_news(limit: int = 10) -> List[Dict[str, Any]]:
+def parse_article_date(date_str: str) -> Optional[datetime.datetime]:
+    """Parse RFC 2822 RSS date string into timezone-aware UTC datetime."""
+    if not date_str:
+        return None
+    try:
+        dt = parsedate_to_datetime(date_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone.utc)
+    except Exception:
+        return None
+
+def fetch_latest_forex_news(limit: int = 15) -> List[Dict[str, Any]]:
     """
-    Fetch breaking news articles from Forex Factory real-time RSS.
-    Returns list of dicts with title, link, pub_date, news_id.
+    Fetch breaking news articles from Forex Factory and FXStreet real-time feeds.
+    Parses timestamps, dedupes titles, and sorts strictly newest first.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     }
 
-    raw_xml = None
-    # 1. Try Google News Forex Factory index
-    try:
-        resp = requests.get(FF_GOOGLE_NEWS_RSS, headers=headers, timeout=10)
-        if resp.status_code == 200 and resp.text:
-            raw_xml = resp.content
-    except Exception as e:
-        logger.warning(f"Google News Forex Factory RSS fetch failed: {e}")
-
-    # 2. Fallback to FXStreet RSS
-    if not raw_xml:
-        try:
-            resp = requests.get(FXSTREET_NEWS_RSS, headers=headers, timeout=10)
-            if resp.status_code == 200 and resp.text:
-                raw_xml = resp.content
-        except Exception as e:
-            logger.error(f"Fallback RSS fetch failed: {e}")
-
-    if not raw_xml:
-        return []
-
+    endpoints = [FXSTREET_NEWS_RSS, FF_GOOGLE_NEWS_RSS]
     articles = []
-    try:
-        root = ET.fromstring(raw_xml)
-        for item in root.findall(".//item")[:limit]:
-            title_el = item.find("title")
-            link_el = item.find("link")
-            pub_date_el = item.find("pubDate")
-            desc_el = item.find("description")
+    seen_titles = set()
 
-            if title_el is None or not title_el.text:
-                continue
+    for url in endpoints:
+        try:
+            resp = requests.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200 and resp.text:
+                root = ET.fromstring(resp.content)
+                for item in root.findall(".//item"):
+                    title_el = item.find("title")
+                    link_el = item.find("link")
+                    pub_date_el = item.find("pubDate")
+                    desc_el = item.find("description")
 
-            raw_title = title_el.text.strip()
-            # Clean " - Forex Factory" suffix if present
-            clean_title = raw_title.replace(" - Forex Factory", "").strip()
+                    if title_el is None or not title_el.text:
+                        continue
 
-            link = link_el.text.strip() if link_el is not None and link_el.text else ""
-            pub_date = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
-            desc = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
+                    raw_title = title_el.text.strip()
+                    clean_title = raw_title.replace(" - Forex Factory", "").strip()
 
-            news_id = generate_news_id(clean_title)
+                    # Deduplicate headlines
+                    lower_title = clean_title.lower()
+                    if lower_title in seen_titles:
+                        continue
+                    seen_titles.add(lower_title)
 
-            articles.append({
-                "news_id": news_id,
-                "title": clean_title,
-                "link": link,
-                "pub_date": pub_date,
-                "description": desc
-            })
-    except Exception as e:
-        logger.error(f"Error parsing news RSS XML: {e}")
+                    link = link_el.text.strip() if link_el is not None and link_el.text else ""
+                    pub_date = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
+                    desc = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
 
-    return articles
+                    news_id = generate_news_id(clean_title)
+                    dt_obj = parse_article_date(pub_date)
+
+                    articles.append({
+                        "news_id": news_id,
+                        "title": clean_title,
+                        "link": link,
+                        "pub_date": pub_date,
+                        "published_dt": dt_obj,
+                        "description": desc
+                    })
+        except Exception as e:
+            logger.warning(f"Error fetching/parsing news RSS from {url}: {e}")
+
+    # Sort strictly by publication date, newest first
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    articles.sort(
+        key=lambda a: a["published_dt"] or (now_utc - datetime.timedelta(days=365)),
+        reverse=True
+    )
+
+    return articles[:limit]
 
 def analyze_forex_news_with_ai(headline: str, snippet: str = "") -> str:
     """
@@ -182,31 +197,46 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
     If new unseen story is found, analyze with AI and send alert.
     Returns the count of new stories processed.
     """
-    articles = fetch_latest_forex_news(limit=10)
+    articles = fetch_latest_forex_news(limit=15)
     if not articles:
         return 0
 
-    # Check if this is the very first initialization of the table
-    # To prevent flooding, if database has 0 seen news, mark all except the latest 1
-    unseen = [a for a in articles if not database.is_news_seen(a["news_id"])]
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
 
-    # If first time running, process only the latest 1 article as a live test
-    # and mark the rest as seen
+    # Filter unseen articles
+    unseen = [a for a in articles if not database.is_news_seen(a["news_id"])]
+    if not unseen:
+        return 0
+
+    # Separate fresh breaking news (< MAX_BREAKING_NEWS_AGE_HOURS) from past news
+    fresh_unseen = []
+    for art in unseen:
+        art_dt = art.get("published_dt")
+        if art_dt:
+            age_hours = (now_utc - art_dt).total_seconds() / 3600.0
+            if age_hours > MAX_BREAKING_NEWS_AGE_HOURS:
+                # Silently mark older news as seen without alerting or spending AI quota
+                logger.info(f"Silently marking past news as seen ({age_hours:.1f}h old): {art['title']}")
+                database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
+                continue
+        fresh_unseen.append(art)
+
+    # Check if this is the very first initialization of the table
     with database.get_connection() as conn:
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM seen_news")
         total_seen = c.fetchone()[0]
 
-    if total_seen == 0 and len(unseen) > 1:
-        logger.info(f"First-time news initialization: marking {len(unseen)-1} old articles as seen.")
-        for a in unseen[1:]:
+    # On first run, mark all except the single latest fresh item to prevent flooding
+    if total_seen == 0 and len(fresh_unseen) > 1:
+        logger.info(f"First-time news initialization: marking {len(fresh_unseen)-1} articles as seen.")
+        for a in fresh_unseen[1:]:
             database.mark_news_as_seen(a["news_id"], a["title"], a["link"], a["pub_date"])
-        unseen = unseen[:1]  # Only analyze the most recent 1
+        fresh_unseen = fresh_unseen[:1]
 
     processed_count = 0
-    # Process newest first
-    for art in unseen:
-        logger.info(f"Analyzing new Forex story: {art['title']}")
+    for art in fresh_unseen:
+        logger.info(f"Analyzing fresh Forex story: {art['title']}")
         analysis = analyze_forex_news_with_ai(art["title"], art["description"])
         
         # Check severity filter: Only dispatch instant alert if High/Medium Impact or critical market catalyst

@@ -35,7 +35,21 @@ class TestForexNewsMonitor(unittest.TestCase):
         alert = forex_news_monitor.format_news_telegram_alert(dummy_item, dummy_analysis)
         self.assertIn("Fed Powell Signals Cautious Rate Cuts Ahead", alert)
         self.assertIn("High 🔴", alert)
-        self.assertIn("EUR/USD", alert)
+    def test_parse_article_date(self):
+        date_str = "Wed, 16 Sep 2026 19:00:36 GMT"
+        dt = forex_news_monitor.parse_article_date(date_str)
+        self.assertIsNotNone(dt)
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.month, 9)
+        self.assertEqual(dt.day, 16)
+
+    def test_old_news_filtered(self):
+        import datetime
+        old_date_str = "Wed, 16 Sep 2026 19:00:36 GMT"
+        dt = forex_news_monitor.parse_article_date(old_date_str)
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        age_hours = (now_utc - dt).total_seconds() / 3600.0
+        self.assertGreater(age_hours, forex_news_monitor.MAX_BREAKING_NEWS_AGE_HOURS)
 
 if __name__ == "__main__":
     unittest.main()

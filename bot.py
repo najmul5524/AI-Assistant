@@ -606,9 +606,38 @@ async def forex_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status_msg.delete()
         except Exception:
             pass
-    except Exception as e:
-        logger.error(f"Failed to generate forex PDF report: {e}")
         await update.message.reply_text(f"❌ ফরেক্স রিপোর্ট তৈরিতে সমস্যা হয়েছে: {str(e)}")
+
+async def forecast_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /forecast_pdf - Generates and dispatches an illustrated Next-Day Market Movement Forecast PDF with charts."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_DOCUMENT)
+    status_msg = await update.message.reply_text("⏳ আগামীকালের মার্কেট পূর্বাভাস ও টেকনিক্যাল চার্টসহ প্রাতিষ্ঠানিক PDF তৈরি হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
+
+    try:
+        loop = asyncio.get_running_loop()
+        pdf_path = await loop.run_in_executor(None, forex_digest_service.generate_daily_forecast_pdf)
+
+        caption = "📊 *আগামীকালের মার্কেট পূর্বাভাস ও টেকনিক্যাল চার্ট রিপোর্ট*\n\n✅ গোল্ড, সিলভার, ফিউচার্স ও ফরেক্স পেয়ারের প্রাইস রেঞ্জ চিত্রসহ প্রস্তুত!"
+        with open(pdf_path, "rb") as doc_file:
+            await context.bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=doc_file,
+                filename=pdf_path.name,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Failed to generate forecast PDF: {e}")
+        await update.message.reply_text(f"❌ পূর্বাভাস PDF তৈরিতে সমস্যা হয়েছে: {str(e)}")
 
 # ----------------- Message Handler ----------------- #
 
@@ -916,15 +945,26 @@ async def scheduled_news_monitor_job(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in scheduled_news_monitor_job: {e}")
 
 async def daily_evening_digest_job(context: ContextTypes.DEFAULT_TYPE):
-    """Daily evening job at 22:00 (10:00 PM Asia/Dhaka) dispatching consolidated Next-Day Price Movement & Evening Wrap-up."""
+    """Daily evening job at 22:00 (10:00 PM Asia/Dhaka) dispatching consolidated Next-Day Price Movement & Illustrated PDF."""
     logger.info("Executing scheduled Daily Evening Forex & Multi-Asset Prediction Wrap-up...")
     try:
         loop = asyncio.get_running_loop()
         digest_text = await loop.run_in_executor(None, forex_digest_service.generate_daily_digest)
+        pdf_path = await loop.run_in_executor(None, forex_digest_service.generate_daily_forecast_pdf)
+
         target_uids = ALLOWED_USER_IDS if ALLOWED_USER_IDS else []
         for uid in target_uids:
             try:
                 await send_split_message(context.bot, uid, digest_text, parse_mode=ParseMode.MARKDOWN)
+                caption = "📊 *আগামীকালের মার্কেট পূর্বাভাস ও টেকনিক্যাল চার্ট*\n\n✅ গোল্ড, সিলভার, ফিউচার্স ও ফরেক্স পেয়ারের প্রাইস রেঞ্জ চিত্রসহ প্রস্তুত!"
+                with open(pdf_path, "rb") as doc_file:
+                    await context.bot.send_document(
+                        chat_id=uid,
+                        document=doc_file,
+                        filename=pdf_path.name,
+                        caption=caption,
+                        parse_mode=ParseMode.MARKDOWN
+                    )
             except Exception as e:
                 logger.warning(f"Could not send evening digest/prediction to {uid}: {e}")
     except Exception as e:
@@ -985,6 +1025,7 @@ def main():
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("forecast", digest_command))
     app.add_handler(CommandHandler("prediction", digest_command))
+    app.add_handler(CommandHandler("forecast_pdf", forecast_pdf_command))
     app.add_handler(CommandHandler("forex_pdf", forex_pdf_command))
 
     # Register Text Message Handler

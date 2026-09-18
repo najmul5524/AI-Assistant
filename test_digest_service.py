@@ -25,6 +25,16 @@ class TestForexDigestService(unittest.TestCase):
         except Exception:
             pass
 
+    def test_daily_forecast_pdf_generation(self):
+        pdf_path = forex_digest_service.generate_daily_forecast_pdf(filename_prefix="test_forecast_intel")
+        self.assertIsInstance(pdf_path, Path)
+        self.assertTrue(pdf_path.exists())
+        self.assertGreater(pdf_path.stat().st_size, 1000, "Illustrated Forecast PDF should be non-empty")
+        try:
+            pdf_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     unittest.main()
 

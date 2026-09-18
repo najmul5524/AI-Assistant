@@ -45,6 +45,8 @@ def _markdown_to_html(title: str, text_content: str) -> str:
         elif raw.startswith("- ") or raw.startswith("* ") or raw.startswith("• "):
             b_text = formatted[2:].strip()
             html_body.append(f'<div class="bullet"><span class="dot">•</span> {b_text}</div>')
+        elif raw.startswith("<"):
+            html_body.append(raw)
         else:
             html_body.append(f"<p>{formatted}</p>")
             

@@ -411,14 +411,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text_content=ai_report_text,
                 filename_prefix="Executive_Report"
             )
-            caption = f"📄 {report_title}\n\n✅ আপনার PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
-            with open(pdf_path, "rb") as doc_file:
-                await context.bot.send_document(
-                    chat_id=update.effective_chat.id,
-                    document=doc_file,
-                    filename=pdf_path.name,
-                    caption=caption
-                )
+            try:
+                with open(pdf_path, "rb") as doc_file:
+                    await context.bot.send_document(
+                        chat_id=update.effective_chat.id,
+                        document=doc_file,
+                        filename=pdf_path.name,
+                        caption=caption,
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+            except Exception as send_err:
+                logger.warning(f"Markdown caption failed ({send_err}), retrying with plain text caption...")
+                with open(pdf_path, "rb") as doc_file:
+                    await context.bot.send_document(
+                        chat_id=update.effective_chat.id,
+                        document=doc_file,
+                        filename=pdf_path.name,
+                        caption=f"📄 {report_title}\n\n✅ আপনার PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
+                    )
 
             # If user also requested to email the report
             if target_email:
@@ -438,7 +448,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     body=email_body,
                     attachment_path=pdf_path
                 )
-                await update.message.reply_text(email_res, parse_mode=ParseMode.MARKDOWN)
+                try:
+                    await update.message.reply_text(email_res, parse_mode=ParseMode.MARKDOWN)
+                except Exception:
+                    await update.message.reply_text(email_res)
 
             try:
                 await status_msg.delete()

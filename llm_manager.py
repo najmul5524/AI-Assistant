@@ -293,15 +293,28 @@ class MultiTierLLMManager:
 
         # If all configured tiers failed
         if len(attempted_failures) == 1:
+            failed_tier = attempted_failures[0]
+            unconfigured = []
+            if not GROQ_API_KEY:
+                unconfigured.append("Groq Cloud (GROQ_API_KEY)")
+            if not (CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN):
+                unconfigured.append("Cloudflare Workers AI")
+            if not GITHUB_TOKEN:
+                unconfigured.append("GitHub Models")
+
+            tips = ""
+            if unconfigured:
+                tips = f"\n\n💡 *টিপ:* নিরবচ্ছিন্ন ব্যাকআপ সার্ভিসের জন্য Render Environment-এ {unconfigured[0]}-এর ফ্রি কী যোগ করুন।"
+
             error_response = (
-                f"⚠️ {attempted_failures[0]} থেকে উত্তর পাওয়া যায়নি (কোটা শেষ বা সংযোগ সমস্যা)।\n\n"
-                f"💡 *টিপ:* নিরবচ্ছিন্নভাবে ২৪ ঘণ্টা সার্ভিস পেতে `.env` ফাইলে Groq Cloud-এর ফ্রি কী (`GROQ_API_KEY`) যোগ করুন (https://console.groq.com/)।"
+                f"⚠️ {failed_tier} থেকে উত্তর পাওয়া যায়নি (কোটা শেষ বা সাময়িক সংযোগ সমস্যা)।"
+                f"{tips}"
             )
         else:
             error_response = (
-                f"⚠️ কনফিগার করা সকল AI প্রোভাইডারের ফ্রি কোটা/লিমিট এই মুহূর্তে সাময়িকভাবে শেষ।\n"
-                f"চেষ্টা করা প্রোভাইডারসমূহ: {', '.join(attempted_failures)}\n\n"
-                "কিছুক্ষণ পর ফ্রি লিমিট রিসেট হলে স্বয়ংক্রিয়ভাবে কাজ শুরু হবে।"
+                f"⚠️ কনফিগার করা সকল AI প্রোভাইডারের ফ্রি লিমিট এই মুহূর্তে সাময়িকভাবে শেষ।\n\n"
+                f"🔍 চেষ্টা করা প্রোভাইডারসমূহ: {', '.join(attempted_failures)}\n\n"
+                "কিছুক্ষণ পর ফ্রি লিমিট রিসেট হলে অথবা লোড কমলে স্বয়ংক্রিয়ভাবে স্বাভাবিক রেসপন্স পাবেন।"
             )
 
         return error_response, "None", None

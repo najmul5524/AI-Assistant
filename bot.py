@@ -26,6 +26,9 @@ from config import (
     ALLOWED_USER_IDS,
     BOT_NAME,
     DEFAULT_TIMEZONE,
+    BASE_DIR,
+    GOOGLE_SCRIPT_URL,
+    RESEND_API_KEY,
 )
 import database
 import tools

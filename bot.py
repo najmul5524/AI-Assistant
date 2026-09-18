@@ -38,7 +38,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(f"{BOT_NAME} 24/7 Assistant is running healthy! (v1.3-apps-script)".encode("utf-8"))
+        self.wfile.write(f"{BOT_NAME} 24/7 Assistant is running healthy! (v1.4-fixed-script)".encode("utf-8"))
 
     def log_message(self, format, *args):
         pass # Suppress access logs to keep console clean
@@ -411,23 +411,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text_content=ai_report_text,
                 filename_prefix="Executive_Report"
             )
+            caption = f"📄 {report_title}\n\n✅ আপনার PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
             try:
                 with open(pdf_path, "rb") as doc_file:
                     await context.bot.send_document(
                         chat_id=update.effective_chat.id,
                         document=doc_file,
                         filename=pdf_path.name,
-                        caption=caption,
-                        parse_mode=ParseMode.MARKDOWN
+                        caption=caption
                     )
             except Exception as send_err:
-                logger.warning(f"Markdown caption failed ({send_err}), retrying with plain text caption...")
+                logger.warning(f"Send document failed ({send_err}), retrying without caption...")
                 with open(pdf_path, "rb") as doc_file:
                     await context.bot.send_document(
                         chat_id=update.effective_chat.id,
                         document=doc_file,
-                        filename=pdf_path.name,
-                        caption=f"📄 {report_title}\n\n✅ আপনার PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
+                        filename=pdf_path.name
                     )
 
             # If user also requested to email the report

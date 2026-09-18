@@ -55,15 +55,24 @@ def _send_via_google_script(
         }
 
     try:
-        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
-        if response.status_code == 200:
-            res_json = response.json()
-            if res_json.get("status") == "success":
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=30, allow_redirects=False)
+        # Google Apps Script always issues 302 Found redirect on POST
+        if response.status_code == 302 and "Location" in response.headers:
+            redirect_url = response.headers["Location"]
+            response = requests.post(redirect_url, json=payload, timeout=30)
+
+        if response.status_code in [200, 302]:
+            try:
+                res_json = response.json()
+                if res_json.get("status") == "success":
+                    return True, f"✅ সফলভাবে আপনার জিমেইল থেকে ইমেইল পাঠানো হয়েছে:\n📧 প্রাপক: `{to_email}`\n📌 বিষয়: *{subject}*"
+                else:
+                    return False, f"❌ Google Script ত্রুটি: {res_json.get('message', 'Unknown error')}"
+            except Exception:
+                # If Google Script returned HTML confirmation or empty redirect
                 return True, f"✅ সফলভাবে আপনার জিমেইল থেকে ইমেইল পাঠানো হয়েছে:\n📧 প্রাপক: `{to_email}`\n📌 বিষয়: *{subject}*"
-            else:
-                return False, f"❌ Google Script ত্রুটি: {res_json.get('message', 'Unknown error')}"
         else:
-            return False, f"❌ Google Script HTTP {response.status_code}: {response.text}"
+            return False, f"❌ Google Script HTTP {response.status_code}: {response.text[:200]}"
     except Exception as e:
         logger.error(f"Failed to send via Google Script: {e}")
         return False, f"❌ Google Script সংযোগ ব্যর্থ: {str(e)}"

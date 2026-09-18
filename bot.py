@@ -286,8 +286,15 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt)
 
     try:
+        pdf_title = "Executive Analysis Report"
+        en_words = [w for w in topic.split() if not any('\u0980' <= c <= '\u09ff' for c in w) and len(w) > 1]
+        if en_words:
+            pdf_title = f"Report: {' '.join(en_words).upper()}"
+        else:
+            pdf_title = f"Report: {topic[:30]}"
+
         pdf_path = report_generator.generate_pdf_report(
-            title=f"Report: {topic}",
+            title=pdf_title,
             text_content=ai_report_text,
             filename_prefix=topic
         )
@@ -389,11 +396,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt, context_data=search_data)
 
-        # Clean topic title for PDF header
+        # Clean topic title for PDF header (English friendly for PDF layout)
         report_title = text[:60].replace("\n", " ")
+        pdf_title = "Executive Analysis Report"
+        en_words = [w for w in text.split() if not any('\u0980' <= c <= '\u09ff' for c in w) and len(w) > 1]
+        if en_words:
+            pdf_title = f"Report: {' '.join(en_words).upper()}"
+        else:
+            pdf_title = "Executive Analysis Report"
+
         try:
             pdf_path = report_generator.generate_pdf_report(
-                title=f"Report: {report_title}",
+                title=pdf_title,
                 text_content=ai_report_text,
                 filename_prefix="Executive_Report"
             )

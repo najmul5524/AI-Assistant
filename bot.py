@@ -45,6 +45,7 @@ import forex_service
 import google_calendar_service
 import forex_news_monitor
 import forex_digest_service
+import technical_analysis_service
 from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -163,6 +164,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"আমি আপনার দৈনন্দিন যেকোনো কাজ, ইমেইল, রিপোর্ট তৈরি, ওয়েব সার্চ ও প্ল্যানিংয়ে সাহায্য করতে পারি।\n\n"
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
+        f"• `/ta [সিম্বল] [টাইমফ্রেম]` - লাইভ ক্যান্ডেলের নিখুঁত ব্যবচ্ছেদ (Dissection), ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল (যেমন `/ta gold`, `/ta btc 5m`)\n"
         f"• `/forecast` - আগামীকালের গোল্ড, মেটাল, ফিউচার্স ও ফরেক্স প্রাইস মুভমেন্ট পূর্বাভাস\n"
         f"• `/digest` - দৈনিক একীভূত ম্যাক্রো ডাইজেস্ট ও সেন্টিমেন্ট\n"
         f"• `/forex_pdf` - সাপ্তাহিক প্রাতিষ্ঠানিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট\n"
@@ -190,7 +192,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
-        f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা কাজ সরাসরি মেসেজ হিসেবে লিখুন।\n"
+        f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা টেকনিক্যাল বিশ্লেষণ সরাসরি বাংলায় লিখে চান (যেমন: *'গোল্ডের ক্যান্ডেল ব্যবচ্ছেদ কর'*, *'BTC 15m সিগনাল দাও'*)।\n"
+        f"• `/ta [সিম্বল] [টাইমফ্রেম]` বা `/signal`: ক্যান্ডেলস্টিকের মাইক্রোস্কোপিক ব্যবচ্ছেদ (Anatomy Breakdown), সময়ের সাথে ক্যান্ডেল কিভাবে তৈরি হলো (ইন্ট্রা-ক্যান্ডেল গঠনপ্রক্রিয়া), পূর্ববর্তী High/Low সুইপ বনাম ব্রেকআউট এবং এন্ট্রি, স্টপ লস ও টেক প্রফিটসহ হাই-কনভিকশন সিগন্যাল। (উদাহরণ: `/ta`, `/ta btc`, `/ta gold 5m`, `/ta eurusd 1h`)\n"
         f"• `/forecast` বা `/prediction` বা `/digest`: সারাদিনের সমস্ত নিউজ, গোল্ড (Gold), সিলভার (Silver), ফিউচার্স (S&P 500, Crude Oil) ও X.com সেন্টিমেন্ট বিশ্লেষণ করে আগামীকালের বিস্তারিত প্রাইস মুভমেন্ট পূর্বাভাস।\n"
         f"• `/forex_pdf`: সরাসরি পূর্ণাঙ্গ প্রাতিষ্ঠানিক সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট তৈরি ও ডাউনলোড।\n"
         f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)।\n"
@@ -641,6 +644,45 @@ async def forecast_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"Failed to generate forecast PDF: {e}")
         await update.message.reply_text(f"❌ পূর্বাভাস PDF তৈরিতে সমস্যা হয়েছে: {str(e)}")
 
+async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /ta or /signal - Generates real-time candlestick dissection & high-conviction trading setup."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    symbol = "gold"
+    timeframe = "15m"
+    if context.args:
+        symbol = context.args[0].lower()
+        if len(context.args) > 1:
+            raw_tf = context.args[1].lower()
+            if raw_tf in ["5m", "15m", "1h", "1d", "4h"]:
+                timeframe = raw_tf
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    status_msg = await update.message.reply_text(
+        f"🔬 *{symbol.upper()} ({timeframe})* এর রিয়েল-টাইম ক্যান্ডেল ব্যবচ্ছেদ, ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল তৈরি করা হচ্ছে...",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+    try:
+        loop = asyncio.get_running_loop()
+        report_text = await loop.run_in_executor(
+            None,
+            technical_analysis_service.generate_candle_dissection_report,
+            symbol,
+            timeframe
+        )
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+        await send_split_message(context.bot, update.effective_chat.id, report_text, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        logger.error(f"Error in ta_command: {e}")
+        await update.message.reply_text(f"❌ টেকনিক্যাল এনালাইসিস তৈরিতে সমস্যা হয়েছে: {str(e)}")
+
 # ----------------- Message Handler ----------------- #
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -835,7 +877,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await forex_command(update, context)
             database.add_message(user.id, "user", text)
-            database.add_message(user.id, "assistant", "[Forex Events displayed]")
+    # Check for natural language Technical Analysis & Candle Dissection triggers
+    ta_triggers = [
+        "টেকনিক্যাল", "technical", "ক্যান্ডেল", "candle", "ব্যবচ্ছেদ", "dissect",
+        "সিগন্যাল", "সিগনাল", "signal", "এন্ট্রি", "entry", "স্টপ লস", "stop loss",
+        "scalp", "ইন্ট্রাডে", "intraday", "লিকুইডিটি", "liquidity", "চার্ট এনালাইসিস", "ta "
+    ]
+    asset_words = [
+        "gold", "গোল্ড", "xau", "btc", "বিটকয়েন", "bitcoin", "eth", "ইথেরিয়াম", "ethereum",
+        "eur", "ইউরো", "gbp", "jpy", "nasdaq", "ন্যাশডাক", "nq", "oil", "তেল", "silver", "সিলভার"
+    ]
+    if any(k in lower_text for k in ta_triggers) and (any(w in lower_text for w in asset_words) or any(w in lower_text for w in ["এনালাইসিস", "সিগনাল", "সিগন্যাল", "মুভমেন্ট", "ব্যবচ্ছেদ"])):
+        sym = "gold"
+        tf = "15m"
+        for s in ["btc", "bitcoin", "eth", "ethereum", "eurusd", "gbpusd", "usdjpy", "nasdaq", "nq", "silver", "oil", "gold", "xau"]:
+            if s in lower_text:
+                sym = s
+                break
+        for t in ["5m", "15m", "1h", "1d", "4h"]:
+            if t in lower_text:
+                tf = t
+                break
+
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        status_msg = await update.message.reply_text(
+            f"🔬 *{sym.upper()} ({tf})* এর রিয়েল-টাইম ক্যান্ডেল ব্যবচ্ছেদ ও ট্রেডিং সিগন্যাল তৈরি হচ্ছে...",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        try:
+            loop = asyncio.get_running_loop()
+            report_text = await loop.run_in_executor(
+                None,
+                technical_analysis_service.generate_candle_dissection_report,
+                sym,
+                tf
+            )
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+            await send_split_message(context.bot, update.effective_chat.id, report_text, parse_mode=ParseMode.MARKDOWN)
+            database.add_message(user.id, "user", text)
+            database.add_message(user.id, "assistant", f"[Technical Analysis & Candle Dissection for {sym.upper()} ({tf}) displayed]")
+            return
+        except Exception as e:
+            logger.error(f"Error handling natural language TA: {e}")
+            await update.message.reply_text(f"❌ টেকনিক্যাল এনালাইসিস তৈরিতে সমস্যা হয়েছে: {str(e)}")
             return
 
     # Check for web search triggers
@@ -1005,6 +1092,30 @@ async def sunday_weekly_report_job(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in sunday_weekly_report_job: {e}")
 
+async def scheduled_technical_scanner_job(context: ContextTypes.DEFAULT_TYPE):
+    """Background worker running periodically to scan for high-conviction liquidity sweep reversals on major assets."""
+    try:
+        loop = asyncio.get_running_loop()
+        alerts = await loop.run_in_executor(None, technical_analysis_service.scan_high_conviction_setups)
+        if alerts:
+            target_uids = ALLOWED_USER_IDS if ALLOWED_USER_IDS else []
+            for alert in alerts:
+                msg = (
+                    f"⚡ *হাই-কনভিকশন ইন্ট্রাডে টেকনিক্যাল অ্যালার্ট!*\n\n"
+                    f"📊 *অ্যাসেট:* {alert['name']} ({alert['timeframe']})\n"
+                    f"🎯 *সিগন্যাল:* {alert['direction']}\n"
+                    f"💵 *ক্লোজ প্রাইস:* `{alert['price']}`\n\n"
+                    f"🔍 *সেটআপ ব্যবচ্ছেদ:*\n{alert['setup_desc']}\n\n"
+                    f"💡 বিস্তারিত ক্যান্ডেল অ্যানাটমি দেখতে `/ta {alert['ticker']}` কমান্ড দিন।"
+                )
+                for uid in target_uids:
+                    try:
+                        await context.bot.send_message(chat_id=uid, text=msg, parse_mode=ParseMode.MARKDOWN)
+                    except Exception as err:
+                        logger.warning(f"Failed to dispatch technical alert to {uid}: {err}")
+    except Exception as e:
+        logger.error(f"Error in scheduled_technical_scanner_job: {e}")
+
 # ----------------- Main Launcher ----------------- #
 
 def main():
@@ -1039,6 +1150,9 @@ def main():
     app.add_handler(CommandHandler("prediction", digest_command))
     app.add_handler(CommandHandler("forecast_pdf", forecast_pdf_command))
     app.add_handler(CommandHandler("forex_pdf", forex_pdf_command))
+    app.add_handler(CommandHandler("ta", ta_command))
+    app.add_handler(CommandHandler("signal", ta_command))
+    app.add_handler(CommandHandler("candledissect", ta_command))
 
     # Register Text Message Handler
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
@@ -1051,6 +1165,10 @@ def main():
         # Register 24/7 Forex Factory Breaking News Monitor (runs every FOREX_NEWS_CHECK_INTERVAL seconds)
         app.job_queue.run_repeating(scheduled_news_monitor_job, interval=FOREX_NEWS_CHECK_INTERVAL, first=15)
         print(f"📡 24/7 Forex News Monitor activated (checking every {FOREX_NEWS_CHECK_INTERVAL}s / {FOREX_NEWS_CHECK_INTERVAL // 60}m).")
+
+        # Register 15-minute high conviction intraday scanner
+        app.job_queue.run_repeating(scheduled_technical_scanner_job, interval=900, first=45)
+        print("📈 High-conviction Intraday Technical Scanner activated (running every 15m).")
 
         # Schedule daily morning Forex Sync (e.g. 06:30 AM)
         try:

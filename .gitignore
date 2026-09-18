@@ -7,6 +7,9 @@
 assistant.db
 assistant.db-journal
 
+# Generated PDF/Excel reports
+reports/
+
 # Python cache
 __pycache__/
 *.py[cod]

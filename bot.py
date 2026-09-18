@@ -29,6 +29,8 @@ from config import (
 )
 import database
 import tools
+import report_generator
+import email_service
 from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -89,15 +91,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     welcome_text = (
         f"👋 *স্বাগতম! আমি {BOT_NAME}, আপনার ২৪/৭ পার্সোনাল এআই অ্যাসিস্ট্যান্ট।*\n\n"
-        f"আমি আপনার দৈনন্দিন যেকোনো কাজ, প্রশ্ন, প্ল্যানিং, কোডিং ও ক্যালকুলেশনে সাহায্য করতে পারি।\n\n"
+        f"আমি আপনার দৈনন্দিন যেকোনো কাজ, ইমেইল, রিপোর্ট তৈরি, ওয়েব সার্চ ও প্ল্যানিংয়ে সাহায্য করতে পারি।\n\n"
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
-        f"• `/status` - এআই প্রোভাইডারদের স্ট্যাটাস দেখা\n"
-        f"• `/search <প্রশ্ন>` - সরাসরি ইন্টারনেট থেকে লাইভ সার্চ\n"
+        f"• `/report <বিষয়>` - সরাসরি প্রফেশনাল PDF রিপোর্ট তৈরি\n"
+        f"• `/email <প্রাপক> <বিষয়> | <বার্তা>` - আসল ইমেইল পাঠানো\n"
+        f"• `/search <প্রশ্ন>` - ইন্টারনেট থেকে লাইভ সার্চ\n"
         f"• `/remind <মিনিট> <বার্তা>` - রিমাইন্ডার সেট করা\n"
-        f"• `/reminders` - অপেক্ষমান রিমাইন্ডারের তালিকা\n"
-        f"• `/time` - বর্তমান লাইভ সময় ও তারিখ\n"
-        f"• `/clear` - আগের চ্যাট মেমোরি রিসেট করা\n"
+        f"• `/reminders` - অপেক্ষমান রিমাইন্ডার তালিকা\n"
+        f"• `/status` - এআই প্রোভাইডারদের স্ট্যাটাস দেখা\n"
+        f"• `/clear` - চ্যাট মেমোরি রিসেট করা\n"
         f"• `/help` - বিস্তারিত সাহায্য গাইড\n\n"
         f"আমাকে যেকোনো কিছু লিখে মেসেজ পাঠান, আমি কাজ শুরু করছি!"
     )
@@ -113,8 +116,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
         f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা কাজ সরাসরি মেসেজ হিসেবে লিখুন।\n"
+        f"• `/report <বিষয়>`: যেমন `/report এআই ও ভবিষ্যৎ চাকরি বাজার` (পিডিএফ তৈরি হবে)\n"
+        f"• `/email <to> <subject> | <body>`: যেমন `/email friend@test.com আপডেট | সালাম, কাজ শেষ হয়েছে।`\n"
         f"• `/search <বিষয়>`: যেমন `/search আজকের সোনার দাম কত`\n"
-        f"• `/remind <মিনিট> <কাজের নাম>`: যেমন `/remind 45 মিটিংয়ে যোগ দিতে হবে`\n"
+        f"• `/remind <মিনিট> <কাজ>`: যেমন `/remind 45 মিটিংয়ে যোগ দিতে হবে`\n"
         f"• `/reminders`: আপনার বর্তমান সব পেন্ডিং রিমাইন্ডার দেখাবে।\n"
         f"• `/status`: সক্রিয় এআই মডেল এবং সিস্টেম স্বাস্থ্য পরীক্ষা করবে।\n"
         f"• `/clear`: কথোপকথন ইতিহাস মুছে ফ্রেশ শুরু করবে।"
@@ -245,6 +250,90 @@ async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
 
+async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /report <topic> to generate an executive PDF report."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    topic = " ".join(context.args) if context.args else ""
+    if not topic:
+        await update.message.reply_text(
+            "📌 *রিপোর্ট তৈরির ফরম্যাট:*\n`/report <বিষয়>`\n\nউদাহরণ:\n`/report বাংলাদেশে কৃত্রিম বুদ্ধিমত্তার সম্ভাবনা`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    status_msg = await update.message.reply_text(f"⏳ *'{topic}'* এর উপর সম্পূর্ণ প্রফেশনাল রিপোর্ট তৈরি হচ্ছে, অনুগ্রহ করে একটু অপেক্ষা করুন...", parse_mode=ParseMode.MARKDOWN)
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_DOCUMENT)
+
+    prompt = (
+        f"Generate an executive, professional, and comprehensive report on: '{topic}'.\n"
+        f"Include:\n"
+        f"1. Executive Summary\n"
+        f"2. Key Insights & Current Landscape\n"
+        f"3. In-Depth Analysis\n"
+        f"4. Actionable Recommendations & Future Outlook\n\n"
+        f"Write in natural, authoritative style (Bengali if topic is Bengali, English if English).\n"
+        f"Use markdown headings (##, ###) and clean bullet points (- )."
+    )
+
+    ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt)
+
+    try:
+        pdf_path = report_generator.generate_pdf_report(
+            title=f"Report: {topic}",
+            text_content=ai_report_text,
+            filename_prefix=topic
+        )
+        caption = f"📄 *{topic}*\n\n✅ আপনার অনুরোধকৃত PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 জেনারেটর: `{provider_used}`"
+        with open(pdf_path, "rb") as doc_file:
+            await context.bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=doc_file,
+                filename=pdf_path.name,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error(f"Failed to generate report PDF: {e}")
+        await update.message.reply_text(f"❌ রিপোর্ট ফাইলে রূপান্তর করতে সমস্যা হয়েছে: {str(e)}")
+
+async def email_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /email <to> <subject> | <body>."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    full_text = " ".join(context.args) if context.args else ""
+    if not full_text or "|" not in full_text:
+        await update.message.reply_text(
+            "📌 *ইমেইল কমান্ডের সঠিক ফরম্যাট:*\n"
+            "`/email <প্রাপকের ইমেইল> <বিষয়> | <বার্তা>`\n\n"
+            "উদাহরণ:\n"
+            "`/email friend@example.com মিটিং আপডেট | সালাম, কাল সকাল ১০টায় আমাদের মিটিং হবে।`",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    parts = full_text.split("|", 1)
+    header_part = parts[0].strip()
+    body_part = parts[1].strip()
+
+    tokens = header_part.split(None, 1)
+    to_email = tokens[0].strip()
+    subject = tokens[1].strip() if len(tokens) > 1 else "Message from Assistant"
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    success, result_msg = email_service.send_email(to_email=to_email, subject=subject, body=body_part)
+    await update.message.reply_text(result_msg, parse_mode=ParseMode.MARKDOWN)
+
 # ----------------- Message Handler ----------------- #
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -258,7 +347,39 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    # Check for report generation triggers
+    report_keywords = ["রিপোর্ট তৈরি কর", "রিপোর্ট বানাও", "রিপোর্ট দাও", "পিডিএফ দাও", "pdf বানাও", "pdf তৈরি কর", "generate report", "create report", "make a report"]
+    if any(k in text.lower() for k in report_keywords):
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_DOCUMENT)
+        status_msg = await update.message.reply_text("⏳ আপনার অনুরোধ অনুযায়ী একটি প্রফেশনাল PDF রিপোর্ট প্রস্তুত করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
+
+        prompt = (
+            f"Generate an executive, well-structured, comprehensive report based on this request: '{text}'.\n"
+            f"Include an Executive Summary, Key Highlights, Detailed Findings, and Actionable Recommendations.\n"
+            f"Use markdown headers (##, ###) and clean bullet points (- )."
+        )
+        ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt)
+
+        try:
+            pdf_path = report_generator.generate_pdf_report(title="Executive Summary Report", text_content=ai_report_text, filename_prefix="ai_report")
+            caption = f"📄 *আপনার অনুরোধকৃত PDF রিপোর্ট তৈরি সম্পন্ন!*\n🤖 এআই ইঞ্জিন: `{provider_used}`"
+            with open(pdf_path, "rb") as doc_file:
+                await context.bot.send_document(
+                    chat_id=update.effective_chat.id,
+                    document=doc_file,
+                    filename=pdf_path.name,
+                    caption=caption,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
+            database.add_message(user.id, "user", text)
+            database.add_message(user.id, "assistant", f"[PDF Report Dispatched: {pdf_path.name}]", model_used=provider_used)
+            return
+        except Exception as e:
+            logger.error(f"Conversational report generation failed: {e}")
 
     # Check for web search triggers
     context_data = None
@@ -338,6 +459,8 @@ def main():
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("remind", remind_command))
     app.add_handler(CommandHandler("reminders", reminders_command))
+    app.add_handler(CommandHandler("report", report_command))
+    app.add_handler(CommandHandler("email", email_command))
 
     # Register Text Message Handler
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))

@@ -52,8 +52,18 @@ GROQ_MODELS = [
     "llama-3.1-8b-instant"
 ]
 
-BOT_NAME = os.getenv("BOT_NAME", "Nova AI")
+BOT_NAME = os.getenv("BOT_NAME", "Goodushh")
 DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "Asia/Dhaka")
+
+# SMTP Email Configuration
+SMTP_EMAIL = os.getenv("SMTP_EMAIL", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+
+# Reports Output Directory
+REPORTS_DIR = BASE_DIR / "reports"
+REPORTS_DIR.mkdir(exist_ok=True)
 
 # System Prompt given to the assistant
 SYSTEM_PROMPT = f"""You are {BOT_NAME}, an exceptionally capable, intelligent, and reliable 24/7 personal AI assistant.

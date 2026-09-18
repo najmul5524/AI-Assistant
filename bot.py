@@ -946,6 +946,11 @@ async def scheduled_news_monitor_job(context: ContextTypes.DEFAULT_TYPE):
 
 async def daily_evening_digest_job(context: ContextTypes.DEFAULT_TYPE):
     """Daily evening job at 22:00 (10:00 PM Asia/Dhaka) dispatching consolidated Next-Day Price Movement & Illustrated PDF."""
+    enable_render_dispatch = os.getenv("ENABLE_RENDER_EVENING_DISPATCH", "false").lower() == "true"
+    if not enable_render_dispatch:
+        logger.info("Daily 10:00 PM Evening Forecast is handled via GitHub Actions (Zero Render Bandwidth). Set ENABLE_RENDER_EVENING_DISPATCH=true to run in bot.")
+        return
+
     logger.info("Executing scheduled Daily Evening Forex & Multi-Asset Prediction Wrap-up...")
     try:
         loop = asyncio.get_running_loop()

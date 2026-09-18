@@ -78,12 +78,30 @@ def send_email(
             )
             msg.attach(part)
 
-        # Connect to SMTP server
+        # Connect to SMTP server (with fallback between STARTTLS 587 and SSL 465)
         logger.info(f"Connecting to SMTP server {SMTP_SERVER}:{SMTP_PORT}...")
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=20)
-        server.ehlo()
-        server.starttls()
-        server.ehlo()
+        try:
+            if SMTP_PORT == 465:
+                server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=15)
+                server.ehlo()
+            else:
+                server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=15)
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+        except (OSError, smtplib.SMTPConnectError) as conn_err:
+            # If 587 failed, try fallback to SSL 465 (or vice versa)
+            alt_port = 465 if SMTP_PORT != 465 else 587
+            logger.warning(f"Connection on port {SMTP_PORT} failed ({conn_err}). Attempting fallback to port {alt_port}...")
+            if alt_port == 465:
+                server = smtplib.SMTP_SSL(SMTP_SERVER, 465, timeout=15)
+                server.ehlo()
+            else:
+                server = smtplib.SMTP(SMTP_SERVER, 587, timeout=15)
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.send_message(msg)
         server.quit()
@@ -99,6 +117,18 @@ def send_email(
             "অনুগ্রহ করে নিশ্চিত করুন যে আপনার জিমেইলে 2-Step Verification অন করা আছে এবং আপনি আপনার সাধারণ পাসওয়ার্ডের বদলে "
             "[Google App Password](https://myaccount.google.com/apppasswords) ব্যবহার করছেন।"
         )
+    except OSError as net_err:
+        logger.error(f"SMTP Network error: {net_err}")
+        err_str = str(net_err)
+        if "101" in err_str or "unreachable" in err_str.lower() or "timeout" in err_str.lower():
+            return (
+                False,
+                "❌ ইমেইল পাঠাতে ব্যর্থ হয়েছে: **Render Cloud-এর Free Tier-এ স্প্যাম প্রতিরোধের জন্য আউটবাউন্ড SMTP পোর্ট (587/465) ব্লক করা থাকে।**\n\n"
+                "💡 **বিকল্প সমাধান:**\n"
+                "১. ক্লাউড থেকে সরাসরি ফ্রি ইমেইল পাঠাতে **Resend** বা **Brevo (Sendinblue)**-এর ফ্রি HTTPS API ব্যবহার করা যায় (যা রেন্ডারে ব্লক হয় না)।\n"
+                "২. অথবা আপনার লোকাল পিসিতে বটটি রান করলে জিমেইল দিয়ে সাথে সাথে কোনো বাধা ছাড়াই ইমেইল চলে যাবে।"
+            )
+        return False, f"❌ ইমেইল পাঠাতে নেটওয়ার্ক সমস্যা হয়েছে: {err_str}"
     except Exception as e:
         logger.error(f"Failed to send email: {e}")
         return False, f"❌ ইমেইল পাঠাতে সমস্যা হয়েছে: {str(e)}"

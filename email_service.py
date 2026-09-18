@@ -156,11 +156,17 @@ def send_email(
 
     # 1. Highest Priority Cloud Dispatcher: Google Apps Script Web App (Sends directly from your Gmail to ANY recipient)
     if GOOGLE_SCRIPT_URL:
-        return _send_via_google_script(to_email, subject, body, attachment_path)
+        success, res = _send_via_google_script(to_email, subject, body, attachment_path)
+        if success:
+            return True, res
+        logger.warning(f"Google Script dispatch failed: {res}. Falling back to Resend/SMTP...")
 
     # 2. Resend HTTPS API (Sends to verified recipient/domain)
     if RESEND_API_KEY:
-        return _send_via_resend(to_email, subject, body, attachment_path)
+        success, res = _send_via_resend(to_email, subject, body, attachment_path)
+        if success:
+            return True, res
+        logger.warning(f"Resend dispatch failed: {res}. Falling back to SMTP...")
 
     # 3. Direct SMTP Fallback (for local machines or unblocked hosts)
     try:

@@ -274,31 +274,25 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     prompt = (
         f"Generate an executive, professional, and comprehensive report on: '{topic}'.\n"
+        f"Write the report in high-quality Bengali (বাংলা ভাষায় পূর্ণাঙ্গ এবং প্রফেশনাল রিপোর্ট তৈরি করুন)।\n"
         f"Include:\n"
-        f"1. Executive Summary\n"
-        f"2. Key Insights & Current Landscape\n"
-        f"3. In-Depth Analysis & Data Points\n"
-        f"4. Actionable Recommendations & Strategic Outlook\n\n"
-        f"IMPORTANT: Write the formal PDF document text in clean, professional, publication-grade English so that all formatting, headers, tables, and typography render with 100% perfection without font encoding glitches.\n"
-        f"Use markdown headings (##, ###) and clean bullet points (- )."
+        f"1. Executive Summary (নির্বাহী সারসংক্ষেপ)\n"
+        f"2. Key Insights & Current Landscape (মূল বিষয় ও বর্তমান অবস্থা)\n"
+        f"3. In-Depth Analysis & Data Points (বিস্তারিত বিশ্লেষণ ও তথ্যাবলি)\n"
+        f"4. Actionable Recommendations & Strategic Outlook (ভবিষ্যৎ সুপারিশ ও করণীয়)\n\n"
+        f"Use clean markdown headings (##, ###) and clean bullet points (- )."
     )
 
     ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt)
 
     try:
-        pdf_title = "Executive Analysis Report"
-        en_words = [w for w in topic.split() if not any('\u0980' <= c <= '\u09ff' for c in w) and len(w) > 1]
-        if en_words:
-            pdf_title = f"Report: {' '.join(en_words).upper()}"
-        else:
-            pdf_title = f"Report: {topic[:30]}"
-
+        pdf_title = f"{topic[:60]} — এক্সিকিউটিভ রিপোর্ট"
         pdf_path = report_generator.generate_pdf_report(
             title=pdf_title,
             text_content=ai_report_text,
-            filename_prefix=topic
+            filename_prefix=topic[:20]
         )
-        caption = f"📄 {topic}\n\n✅ আপনার অনুরোধকৃত PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 জেনারেটর: {provider_used}"
+        caption = f"📄 {topic[:50]}\n\n✅ আপনার অনুরোধকৃত PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 জেনারেটর: {provider_used}"
         with open(pdf_path, "rb") as doc_file:
             await context.bot.send_document(
                 chat_id=update.effective_chat.id,
@@ -386,24 +380,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 2. Generate comprehensive executive report content via LLM
         prompt = (
             f"You are generating a formal executive report requested by the user: '{text}'.\n"
-            f"Provide a thorough, high-quality, professional report with:\n"
-            f"1. Executive Summary\n"
-            f"2. Current Market / Topic Overview & Key Highlights\n"
-            f"3. In-Depth Analysis & Data Points\n"
-            f"4. Actionable Recommendations & Future Strategic Outlook\n\n"
-            f"IMPORTANT: Write the formal PDF document text in clean, professional, publication-grade English so that all formatting, headers, tables, and typography render with 100% crisp perfection without font encoding glitches.\n"
+            f"Write the complete report in high-quality, professional Bengali (বাংলা ভাষায় পূর্ণাঙ্গ এবং প্রফেশনাল এক্সিকিউটিভ রিপোর্ট লিখুন)।\n"
+            f"Include:\n"
+            f"1. Executive Summary (নির্বাহী সারসংক্ষেপ)\n"
+            f"2. Current Market / Topic Overview & Key Highlights (বর্তমান অবস্থা ও মূল পর্যালোচনা)\n"
+            f"3. In-Depth Analysis & Data Points (বিস্তারিত বিশ্লেষণ ও তথ্যাবলি)\n"
+            f"4. Actionable Recommendations & Future Strategic Outlook (কৌশলগত সুপারিশ ও ভবিষ্যৎ সম্ভাবনা)\n\n"
             f"Format using clear markdown headers (##, ###) and clean bullet points (- )."
         )
         ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt, context_data=search_data)
 
-        # Clean topic title for PDF header (English friendly for PDF layout)
-        report_title = text[:60].replace("\n", " ")
-        pdf_title = "Executive Analysis Report"
-        en_words = [w for w in text.split() if not any('\u0980' <= c <= '\u09ff' for c in w) and len(w) > 1]
-        if en_words:
-            pdf_title = f"Report: {' '.join(en_words).upper()}"
-        else:
-            pdf_title = "Executive Analysis Report"
+        # Clean topic title for PDF header
+        clean_title = re.sub(email_pattern, '', text).strip()
+        pdf_title = f"{clean_title[:50]} — এক্সিকিউটিভ রিপোর্ট" if clean_title else "এক্সিকিউটিভ এনালাইসিস রিপোর্ট"
 
         try:
             pdf_path = report_generator.generate_pdf_report(
@@ -411,7 +400,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text_content=ai_report_text,
                 filename_prefix="Executive_Report"
             )
-            caption = f"📄 {report_title}\n\n✅ আপনার PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
+            caption = f"📄 {pdf_title[:45]}\n\n✅ আপনার PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
             try:
                 with open(pdf_path, "rb") as doc_file:
                     await context.bot.send_document(
@@ -432,14 +421,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # If user also requested to email the report
             if target_email:
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-                email_subject = f"Executive Report: {report_title}"
+                email_subject = f"Executive Report: {pdf_title[:40]}"
                 email_body = (
-                    f"Hello,\n\n"
-                    f"Please find attached your requested report regarding: '{report_title}'.\n\n"
-                    f"Summary Highlights:\n"
-                    f"{ai_report_text[:400]}...\n\n"
-                    f"Best regards,\n"
-                    f"{BOT_NAME} Personal AI Assistant"
+                    f"নমস্কার / সালাম,\n\n"
+                    f"আপনার অনুরোধকৃত রিপোর্টটি সংযুক্ত করা হলো: '{pdf_title}'.\n\n"
+                    f"মূল সারসংক্ষেপ:\n"
+                    f"{ai_report_text[:300]}...\n\n"
+                    f"ধন্যবাদ,\n"
+                    f"{BOT_NAME} 24/7 AI Assistant"
                 )
                 email_ok, email_res = email_service.send_email(
                     to_email=target_email,

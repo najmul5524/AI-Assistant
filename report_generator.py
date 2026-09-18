@@ -3,13 +3,7 @@ import datetime
 from pathlib import Path
 from typing import List, Any, Optional
 
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+from fpdf import FPDF
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -18,139 +12,150 @@ from openpyxl.utils import get_column_letter
 from config import REPORTS_DIR, BOT_NAME, BASE_DIR
 
 _font_path = BASE_DIR / "fonts" / "kalpurush.ttf"
-HAS_KALPURUSH = False
-if _font_path.exists():
-    try:
-        pdfmetrics.registerFont(TTFont("Kalpurush", str(_font_path)))
-        HAS_KALPURUSH = True
-    except Exception as e:
-        print(f"Could not register Kalpurush font: {e}")
+HAS_KALPURUSH = _font_path.exists()
 
 def _has_bengali(text: str) -> bool:
     """Returns True if string contains Bengali Unicode characters."""
     return any('\u0980' <= c <= '\u09ff' for c in text)
 
-def _clean_text_for_pdf(text: str) -> str:
-    """Escapes XML entities for ReportLab Paragraphs and converts bold markdown."""
-    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    # Convert **bold** to <b>bold</b>
-    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
-    # Convert *italic* to <i>italic</i>
-    text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
-    return text
+class ExecutivePDF(FPDF):
+    """Modern executive PDF document with header, footer, and Bengali HarfBuzz shaping."""
+    def __init__(self, doc_title: str):
+        super().__init__(orientation="P", unit="mm", format="A4")
+        self.doc_title = doc_title
+        
+    def header(self):
+        if "Kalpurush" in self.fonts:
+            self.set_font("Kalpurush", "", 8)
+            self.set_text_color(148, 163, 184)
+            self.cell(0, 7, f"{BOT_NAME} 24/7 AI • Confidential Executive Report", align="R")
+            self.ln(9)
+            
+    def footer(self):
+        self.set_y(-15)
+        if "Kalpurush" in self.fonts:
+            self.set_font("Kalpurush", "", 8)
+            self.set_text_color(148, 163, 184)
+            self.cell(0, 10, f"পৃষ্ঠা {self.page_no()}", align="C")
 
 def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "report") -> Path:
     """
-    Generates an executive-quality PDF report using ReportLab.
-    Supports English and Bengali seamlessly via Kalpurush Unicode font.
+    Generates an executive-quality PDF report using FPDF2 and uharfbuzz.
+    Supports English and Bengali seamlessly with full OpenType text shaping (ligatures, conjuncts, vowels).
     Returns the Path to the generated PDF.
     """
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     sanitized_prefix = re.sub(r'[^\w\-]', '_', filename_prefix)[:20]
     file_path = REPORTS_DIR / f"{sanitized_prefix}_{timestamp}.pdf"
 
-    doc = SimpleDocTemplate(
-        str(file_path),
-        pagesize=letter,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
-    )
+    pdf = ExecutivePDF(doc_title=title)
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_margins(left=20, top=18, right=20)
+    
+    font_path = BASE_DIR / "fonts" / "kalpurush.ttf"
+    if font_path.exists():
+        pdf.add_font("Kalpurush", "", str(font_path))
+        pdf.add_font("Kalpurush", "B", str(font_path))
+        pdf.add_font("Kalpurush", "I", str(font_path))
+        pdf.add_font("Kalpurush", "BI", str(font_path))
+        try:
+            pdf.set_text_shaping(True)
+        except Exception as e:
+            print(f"Warning: Text shaping could not be enabled: {e}")
+        main_font = "Kalpurush"
+    else:
+        main_font = "Helvetica"
 
-    styles = getSampleStyleSheet()
-
-    # Determine font: Use Kalpurush if Bengali is present, otherwise crisp Helvetica
-    is_bn = _has_bengali(title) or _has_bengali(text_content)
-    font_regular = "Kalpurush" if (is_bn and HAS_KALPURUSH) else "Helvetica"
-    font_bold = "Kalpurush" if (is_bn and HAS_KALPURUSH) else "Helvetica-Bold"
-
-    # Custom typography styles supporting Bengali & English
-    title_style = ParagraphStyle(
-        'DocTitle',
-        parent=styles['Heading1'],
-        fontName=font_bold,
-        fontSize=18,
-        leading=24,
-        textColor=colors.HexColor('#0F172A'),
-        alignment=TA_LEFT,
-        spaceAfter=6
-    )
-
-    meta_style = ParagraphStyle(
-        'DocMeta',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=9,
-        leading=13,
-        textColor=colors.HexColor('#64748B'),
-        spaceAfter=12
-    )
-
-    heading_style = ParagraphStyle(
-        'SectionHeading',
-        parent=styles['Heading2'],
-        fontName=font_bold,
-        fontSize=12,
-        leading=17,
-        textColor=colors.HexColor('#1E293B'),
-        spaceBefore=12,
-        spaceAfter=6
-    )
-
-    body_style = ParagraphStyle(
-        'BodyDark',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=10,
-        leading=15,
-        textColor=colors.HexColor('#334155'),
-        spaceAfter=6
-    )
-
-    bullet_style = ParagraphStyle(
-        'BulletText',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=10,
-        leading=15,
-        textColor=colors.HexColor('#334155'),
-        leftIndent=15,
-        spaceAfter=4
-    )
-
-    elements = []
-
-    # 1. Header Banner
-    now_str = datetime.datetime.now().strftime("%B %d, %Y - %I:%M %p")
-    elements.append(Paragraph(_clean_text_for_pdf(title), title_style))
-    elements.append(Paragraph(f"Generated by <b>{BOT_NAME} 24/7 AI</b> | Date: {now_str}", meta_style))
-    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#3B82F6'), spaceAfter=14))
-
-    # 2. Body Parsing (Markdown paragraphs, headings, bullets)
+    pdf.add_page()
+    
+    # 1. Title Block
+    pdf.set_font(main_font, "B", 17)
+    pdf.set_text_color(15, 23, 42)
+    pdf.multi_cell(0, 9, title)
+    pdf.ln(2)
+    
+    # 2. Metadata bar
+    now_str = datetime.datetime.now().strftime("%d %B, %Y | %I:%M %p")
+    pdf.set_font(main_font, "", 9)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(0, 5, f"জেনারেটেড বাই: {BOT_NAME} AI | সময়: {now_str}")
+    pdf.ln(7)
+    
+    # 3. Accent divider
+    pdf.set_draw_color(59, 130, 246)
+    pdf.set_line_width(0.7)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(6)
+    
+    # 4. Content Parsing (Headings, Bullets, Paragraphs)
     lines = text_content.split("\n")
     for line in lines:
-        raw_line = line.strip()
-        if not raw_line:
-            elements.append(Spacer(1, 6))
+        raw = line.strip()
+        if not raw:
+            pdf.ln(3)
             continue
-
-        if raw_line.startswith("### ") or raw_line.startswith("## ") or raw_line.startswith("# "):
-            clean_head = raw_line.lstrip("#").strip()
-            elements.append(Paragraph(_clean_text_for_pdf(clean_head), heading_style))
-        elif raw_line.startswith("- ") or raw_line.startswith("* ") or raw_line.startswith("• "):
-            bullet_content = raw_line[2:].strip()
-            elements.append(Paragraph(f"• {_clean_text_for_pdf(bullet_content)}", bullet_style))
+            
+        if raw.startswith("### "):
+            head_txt = raw[4:].strip()
+            pdf.ln(2)
+            pdf.set_font(main_font, "B", 12)
+            pdf.set_text_color(30, 41, 59)
+            pdf.multi_cell(0, 7, head_txt)
+            pdf.ln(2)
+        elif raw.startswith("## "):
+            head_txt = raw[3:].strip()
+            pdf.ln(3)
+            pdf.set_font(main_font, "B", 14)
+            pdf.set_text_color(15, 23, 42)
+            pdf.multi_cell(0, 8, head_txt)
+            pdf.ln(2)
+        elif raw.startswith("# "):
+            head_txt = raw[2:].strip()
+            pdf.ln(4)
+            pdf.set_font(main_font, "B", 15)
+            pdf.set_text_color(15, 23, 42)
+            pdf.multi_cell(0, 9, head_txt)
+            pdf.ln(2)
+        elif raw.startswith("- ") or raw.startswith("* ") or raw.startswith("• "):
+            bullet_body = raw[2:].strip()
+            orig_lm = pdf.l_margin
+            y = pdf.get_y()
+            pdf.set_fill_color(59, 130, 246)
+            pdf.circle(orig_lm + 1.5, y + 3.2, 0.9, style="F")
+            
+            pdf.set_left_margin(orig_lm + 6)
+            pdf.set_x(orig_lm + 6)
+            pdf.set_font(main_font, "", 10.5)
+            pdf.set_text_color(51, 65, 85)
+            
+            html_bullet = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', bullet_body)
+            try:
+                pdf.write_html(f"<p>{html_bullet}</p>")
+            except Exception:
+                pdf.multi_cell(0, 6.5, bullet_body)
+            pdf.set_left_margin(orig_lm)
+            pdf.ln(1)
         else:
-            elements.append(Paragraph(_clean_text_for_pdf(raw_line), body_style))
-
-    # 3. Footer Spacer
-    elements.append(Spacer(1, 15))
-    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CBD5E1'), spaceAfter=8))
-    footer_text = f"<i>Confidential - Prepared exclusively by {BOT_NAME} Assistant.</i>"
-    elements.append(Paragraph(footer_text, meta_style))
-
-    doc.build(elements)
+            pdf.set_font(main_font, "", 10.5)
+            pdf.set_text_color(51, 65, 85)
+            html_p = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', raw)
+            try:
+                pdf.write_html(f"<p>{html_p}</p>")
+            except Exception:
+                pdf.multi_cell(0, 6.5, raw)
+            pdf.ln(1.5)
+            
+    # 5. Bottom divider & footer notice
+    pdf.ln(6)
+    pdf.set_draw_color(226, 232, 240)
+    pdf.set_line_width(0.4)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(4)
+    pdf.set_font(main_font, "I", 8.5)
+    pdf.set_text_color(148, 163, 184)
+    pdf.cell(0, 5, f"গোপনীয় ও নির্ভরযোগ্য তথ্যসমৃদ্ধ — প্রস্তুত করেছে {BOT_NAME} পার্সোনাল এআই।")
+    
+    pdf.output(str(file_path))
     return file_path
 
 def generate_excel_report(title: str, headers: List[str], data_rows: List[List[Any]], filename_prefix: str = "report") -> Path:

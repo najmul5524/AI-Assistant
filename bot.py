@@ -29,6 +29,7 @@ from config import (
     BASE_DIR,
     GOOGLE_SCRIPT_URL,
     RESEND_API_KEY,
+    BREVO_API_KEY,
 )
 import database
 import tools
@@ -41,10 +42,11 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         import json, sys
         diag = {
             "bot": BOT_NAME,
-            "version": "v1.6-harfbuzz-check",
+            "version": "v1.7-pymupdf-active",
             "python_version": sys.version,
             "has_kalpurush": (BASE_DIR / "fonts" / "kalpurush.ttf").exists(),
             "google_script_configured": bool(GOOGLE_SCRIPT_URL),
+            "brevo_configured": bool(BREVO_API_KEY),
             "resend_key_configured": bool(RESEND_API_KEY)
         }
         try:

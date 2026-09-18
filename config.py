@@ -62,6 +62,7 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
 GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL", "").strip()
 
 # Reports Output Directory

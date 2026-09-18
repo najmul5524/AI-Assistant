@@ -13,6 +13,7 @@ from config import (
     SMTP_SERVER,
     SMTP_PORT,
     RESEND_API_KEY,
+    BREVO_API_KEY,
     GOOGLE_SCRIPT_URL,
     BOT_NAME
 )
@@ -20,8 +21,8 @@ from config import (
 logger = logging.getLogger(__name__)
 
 def is_email_configured() -> bool:
-    """Check if Google Script URL, Resend API, or SMTP credentials are provided."""
-    return bool(GOOGLE_SCRIPT_URL or RESEND_API_KEY or (SMTP_EMAIL and SMTP_PASSWORD))
+    """Check if Google Script URL, Brevo, Resend API, or SMTP credentials are provided."""
+    return bool(GOOGLE_SCRIPT_URL or BREVO_API_KEY or RESEND_API_KEY or (SMTP_EMAIL and SMTP_PASSWORD))
 
 def _send_via_google_script(
     to_email: str,
@@ -132,6 +133,59 @@ def _send_via_resend(
             )
         return False, f"❌ Resend API ত্রুটি: {err_msg}"
 
+def _send_via_brevo(
+    to_email: str,
+    subject: str,
+    body: str,
+    attachment_path: Optional[Path] = None
+) -> Tuple[bool, str]:
+    """
+    Sends email via Brevo (formerly Sendinblue) HTTPS API (Port 443).
+    - 100% Free (300 emails/day to ANY recipient without domain verification)
+    - Works on Render Free Tier without blocked ports
+    """
+    import base64
+    import requests
+
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json"
+    }
+
+    sender_email = SMTP_EMAIL or "najmul.djd@gmail.com"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f8fafc; padding: 20px; border-radius: 8px;">
+        <div style="white-space: pre-wrap; font-size: 14px;">{body}</div>
+        <hr style="border: none; border-top: 1px solid #cbd5e1; margin: 20px 0;">
+        <p style="font-size: 11px; color: #64748b;">
+            Sent automatically via <b>{BOT_NAME} 24/7 AI Assistant</b>
+        </p>
+    </div>
+    """
+
+    payload = {
+        "sender": {"name": f"{BOT_NAME} AI Assistant", "email": sender_email},
+        "to": [{"email": to_email.strip()}],
+        "subject": subject.strip(),
+        "htmlContent": html_content
+    }
+
+    if attachment_path and Path(attachment_path).is_file():
+        file_obj = Path(attachment_path)
+        with open(file_obj, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+        payload["attachment"] = [{"name": file_obj.name, "content": encoded}]
+
+    try:
+        r = requests.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers, timeout=25)
+        if r.status_code in [200, 201, 202]:
+            return True, f"✅ সফলভাবে ইমেইল পাঠানো হয়েছে:\n📧 প্রাপক: `{to_email}`\n📌 বিষয়: *{subject}*"
+        else:
+            return False, f"❌ Brevo API ত্রুটি ({r.status_code}): {r.text[:200]}"
+    except Exception as e:
+        return False, f"❌ Brevo সংযোগ ব্যর্থ: {str(e)}"
+
 def send_email(
     to_email: str,
     subject: str,
@@ -139,29 +193,37 @@ def send_email(
     attachment_path: Optional[Path] = None
 ) -> Tuple[bool, str]:
     """
-    Dispatches email via Google Script Web App (Priority 1),
-    Resend HTTPS API (Priority 2), or Direct SMTP (Priority 3).
-    Supports optional file attachments (PDF, Excel, etc.).
-    Returns: (success_bool, message_str)
+    Dispatches email via:
+    1. Google Script Web App (Sends from your Gmail)
+    2. Brevo Cloud API (Sends to ANY recipient for free, 300/day)
+    3. Resend HTTPS API (Sends to verified recipient/domain)
+    4. Direct SMTP Fallback
     """
     if not is_email_configured():
         return (
             False,
             "⚠️ ইমেইল সার্ভিস এখনো কনফিগার করা হয়নি!\n\n"
-            "ইমেইল পাঠাতে Render Environment-এ `GOOGLE_SCRIPT_URL` অথবা `RESEND_API_KEY` যোগ করুন।"
+            "ইমেইল পাঠাতে Render Environment-এ `GOOGLE_SCRIPT_URL`, `BREVO_API_KEY`, অথবা `RESEND_API_KEY` যোগ করুন।"
         )
 
     if not to_email or "@" not in to_email:
         return False, "❌ প্রাপকের ইমেইল এড্রেসটি সঠিক নয়।"
 
-    # 1. Highest Priority Cloud Dispatcher: Google Apps Script Web App (Sends directly from your Gmail to ANY recipient)
+    # 1. Google Apps Script Web App (Sends directly from your Gmail to ANY recipient)
     if GOOGLE_SCRIPT_URL:
         success, res = _send_via_google_script(to_email, subject, body, attachment_path)
         if success:
             return True, res
-        logger.warning(f"Google Script dispatch failed: {res}. Falling back to Resend/SMTP...")
+        logger.warning(f"Google Script dispatch failed: {res}. Falling back to Brevo/Resend...")
 
-    # 2. Resend HTTPS API (Sends to verified recipient/domain)
+    # 2. Brevo HTTPS API (Sends to ANY recipient, 300 emails/day completely free)
+    if BREVO_API_KEY:
+        success, res = _send_via_brevo(to_email, subject, body, attachment_path)
+        if success:
+            return True, res
+        logger.warning(f"Brevo dispatch failed: {res}. Falling back to Resend...")
+
+    # 3. Resend HTTPS API (Sends to verified recipient/domain)
     if RESEND_API_KEY:
         success, res = _send_via_resend(to_email, subject, body, attachment_path)
         if success:

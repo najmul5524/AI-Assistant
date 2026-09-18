@@ -20,15 +20,23 @@ def _has_bengali(text: str) -> bool:
     return any('\u0980' <= c <= '\u09ff' for c in text)
 
 def _clean_text_for_kalpurush(text: str) -> str:
-    """Replaces non-breaking hyphens, non-breaking spaces, and soft hyphens with standard ASCII chars."""
+    """
+    Cleans text for rendering with Kalpurush font in PyMuPDF Story.
+    1. Replaces non-standard compound hyphens/dashes between Bengali words with a space,
+       preventing both missing-glyph box artifacts and unnatural hyphenated words (e.g. 'মুদ্রা-নীতি' -> 'মুদ্রা নীতি').
+    2. Replaces remaining non-standard hyphens (e.g. in numbers or after %) with standard ASCII hyphen.
+    3. Replaces non-breaking and special spaces with standard ASCII space.
+    """
     if not text:
         return ""
-    # Normalize special hyphens/dashes that are missing from Kalpurush font
+    # Compound word joins produced by some LLMs: replace with a space between Bengali letters
+    text = re.sub(r'([\u0980-\u09ff])[\u2010\u2011\u2012\u2015]([\u0980-\u09ff])', r'\1 \2', text)
+    # Any remaining non-standard hyphens (e.g. in numbers or after %)
     for h in ['\u2010', '\u2011', '\u2012', '\u2015', '\ufe63', '\uff0d']:
         text = text.replace(h, '-')
     text = text.replace('\u00ad', '')  # soft hyphen
 
-    # Normalize special spaces
+    # Normalize special spaces to regular space
     for sp in ['\u00a0', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200a', '\u202f', '\u205f', '\u3000']:
         text = text.replace(sp, ' ')
 

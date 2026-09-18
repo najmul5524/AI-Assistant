@@ -142,11 +142,8 @@ class MultiTierLLMManager:
                     return response.text
             except Exception as e:
                 last_err = e
-                err_str = str(e)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "Quota exceeded" in err_str:
-                    logger.warning(f"Gemini quota reached for current key. Instantly switching to next AI tier...")
-                    break
-                logger.warning(f"Gemini model {model_name} failed: {e}. Trying next fallback model...")
+                logger.warning(f"Gemini model {model_name} failed: {e}. Trying next Gemini fallback model...")
+                continue
 
         if last_err:
             raise last_err
@@ -169,7 +166,7 @@ class MultiTierLLMManager:
                     model=model_name,
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=2048,
+                    max_tokens=4096,
                 )
                 return response.choices[0].message.content
             except Exception as e:
@@ -195,6 +192,7 @@ class MultiTierLLMManager:
             model=model_name,
             messages=messages,
             temperature=0.7,
+            max_tokens=4096,
         )
         return response.choices[0].message.content
 
@@ -213,6 +211,7 @@ class MultiTierLLMManager:
             model=model_name,
             messages=messages,
             temperature=0.7,
+            max_tokens=4096,
         )
         return response.choices[0].message.content
 
@@ -235,7 +234,7 @@ class MultiTierLLMManager:
 
         payload = {
             "messages": messages,
-            "max_tokens": 3500
+            "max_tokens": 4096
         }
         res = requests.post(url, headers=headers, json=payload, timeout=45)
         res.raise_for_status()

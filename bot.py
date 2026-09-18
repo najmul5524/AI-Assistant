@@ -977,6 +977,11 @@ async def daily_evening_digest_job(context: ContextTypes.DEFAULT_TYPE):
 
 async def sunday_weekly_report_job(context: ContextTypes.DEFAULT_TYPE):
     """Weekly job on Sundays at 20:00 (8:00 PM Asia/Dhaka) generating institutional Weekly Intelligence PDF."""
+    enable_render_dispatch = os.getenv("ENABLE_RENDER_WEEKLY_DISPATCH", "false").lower() == "true"
+    if not enable_render_dispatch:
+        logger.info("Sunday Weekly PDF Report is handled via GitHub Actions (Zero Render Bandwidth). Set ENABLE_RENDER_WEEKLY_DISPATCH=true to run in bot.")
+        return
+
     logger.info("Executing scheduled Sunday Weekly Forex Intelligence Report...")
     try:
         loop = asyncio.get_running_loop()

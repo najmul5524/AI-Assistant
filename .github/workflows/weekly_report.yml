@@ -1,13 +1,13 @@
-name: Daily Market Forecast & Illustrated PDF
+name: Sunday Weekly Forex Intelligence PDF Report
 
 on:
   schedule:
-    # 16:00 UTC corresponds to 22:00 (10:00 PM) Bangladesh Time (Asia/Dhaka UTC+6)
-    - cron: '0 16 * * *'
+    # 14:00 UTC corresponds to 20:00 (08:00 PM) Bangladesh Time (Asia/Dhaka UTC+6) on Sundays
+    - cron: '0 14 * * 0'
   workflow_dispatch: # Allows manual trigger button from GitHub Actions tab
 
 jobs:
-  forecast:
+  weekly_report:
     runs-on: ubuntu-latest
 
     steps:
@@ -25,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Generate & Dispatch Daily Forecast PDF to Telegram
+      - name: Generate & Dispatch Sunday Weekly PDF Report to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           ALLOWED_USER_IDS: ${{ secrets.ALLOWED_USER_IDS }}
@@ -33,5 +33,5 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           DEFAULT_TIMEZONE: 'Asia/Dhaka'
         run: |
-          python send_daily_forecast_telegram.py
+          python send_weekly_report_telegram.py
 

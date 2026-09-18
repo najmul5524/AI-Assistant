@@ -155,5 +155,15 @@ def mark_news_as_seen(news_id: str, title: str, link: str = "", published_at: st
         """, (news_id, title, link, published_at))
         conn.commit()
 
+def get_recent_seen_news(limit: int = 30) -> List[Dict[str, Any]]:
+    """Retrieve the most recent news articles recorded in the database."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, link, published_at FROM seen_news
+            ORDER BY rowid DESC LIMIT ?
+        """, (limit,))
+        return [dict(row) for row in cursor.fetchall()]
+
 # Initialize tables on import
 init_db()

@@ -149,23 +149,32 @@ class MultiTierLLMManager:
         raise ValueError("No Gemini models succeeded.")
 
     def _call_groq(self, history: List[Dict[str, str]], prompt: str) -> str:
-        """Execute request using Groq Cloud."""
+        """Execute request using Groq Cloud with multi-model fallback."""
         if not self.groq_client:
             raise ValueError("Groq is not configured or API key is missing.")
 
-        model_name = GROQ_MODELS[0]
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for item in history:
             messages.append({"role": item["role"], "content": item["content"]})
         messages.append({"role": "user", "content": prompt})
 
-        response = self.groq_client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=2048,
-        )
-        return response.choices[0].message.content
+        last_err = None
+        for model_name in GROQ_MODELS:
+            try:
+                response = self.groq_client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=2048,
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Groq model {model_name} failed: {e}. Trying next Groq model...")
+
+        if last_err:
+            raise last_err
+        raise ValueError("No Groq models succeeded.")
 
     def _call_openrouter(self, history: List[Dict[str, str]], prompt: str) -> str:
         """Execute request using OpenRouter."""

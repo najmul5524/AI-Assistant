@@ -61,6 +61,10 @@ def _markdown_to_html(title: str, text_content: str) -> str:
         if not raw:
             continue
             
+        if raw in ("---", "***", "___"):
+            html_body.append('<div class="section-divider"></div>')
+            continue
+            
         formatted = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', raw)
         formatted = re.sub(r'\*(.*?)\*', r'<i>\1</i>', formatted)
         
@@ -124,6 +128,11 @@ h1.doc-title {{
     background-color: #3b82f6;
     margin-bottom: 18px;
 }}
+.section-divider {{
+    height: 1px;
+    background-color: #e2e8f0;
+    margin: 16px 0 14px 0;
+}}
 h2 {{
     color: #0f172a;
     font-size: 14pt;
@@ -147,6 +156,7 @@ p {{
     margin-bottom: 6px;
     text-indent: -12px;
     padding-left: 12px;
+    text-align: justify;
 }}
 .dot {{
     color: #2563eb;

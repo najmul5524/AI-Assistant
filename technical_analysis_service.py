@@ -554,3 +554,4 @@ def scan_high_conviction_setups() -> List[Dict[str, Any]]:
             logger.warning(f"Scanner error for {ticker}: {e}")
 
     return detected_alerts
+

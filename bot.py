@@ -46,6 +46,7 @@ import google_calendar_service
 import forex_news_monitor
 import forex_digest_service
 import technical_analysis_service
+import voice_service
 from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -163,6 +164,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👋 *স্বাগতম! আমি {BOT_NAME}, আপনার ২৪/৭ পার্সোনাল এআই অ্যাসিস্ট্যান্ট।*\n\n"
         f"আমি আপনার দৈনন্দিন যেকোনো কাজ, ইমেইল, রিপোর্ট তৈরি, ওয়েব সার্চ ও প্ল্যানিংয়ে সাহায্য করতে পারি।\n\n"
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
+        f"🎙️ **ভয়েস মেসেজ সাপোর্ট:** আপনি চাইলে টাইপ না করে টেলিগ্রামে সরাসরি বাংলায় মুখে কথা বলে ভয়েস পাঠাতে পারেন! আমি আপনার কথা শুনে সাথে সাথে কাজ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
         f"• `/ta [সিম্বল] [টাইমফ্রেম]` - লাইভ ক্যান্ডেলের নিখুঁত ব্যবচ্ছেদ (Dissection), ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল (যেমন `/ta gold`, `/ta btc 5m`)\n"
         f"• `/forecast` - আগামীকালের গোল্ড, মেটাল, ফিউচার্স ও ফরেক্স প্রাইস মুভমেন্ট পূর্বাভাস\n"
@@ -683,7 +685,7 @@ async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in ta_command: {e}")
         await update.message.reply_text(f"❌ টেকনিক্যাল এনালাইসিস তৈরিতে সমস্যা হয়েছে: {str(e)}")
 
-# ----------------- Message Handler ----------------- #
+# ----------------- Message & Voice Handlers ----------------- #
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process incoming text messages."""
@@ -695,6 +697,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     if not text:
         return
+
+    await process_user_text(update, context, text)
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Process incoming Telegram voice notes and audio messages."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    status_msg = await update.message.reply_text("🎙️ *ভয়েস শোনা হচ্ছে এবং প্রসেস করা হচ্ছে...*", parse_mode=ParseMode.MARKDOWN)
+
+    try:
+        tg_file = await context.bot.get_file(voice.file_id)
+        audio_bytes = bytes(await tg_file.download_as_bytearray())
+
+        loop = asyncio.get_running_loop()
+        transcribed_text, provider = await loop.run_in_executor(
+            None,
+            voice_service.transcribe_audio,
+            audio_bytes,
+            "voice.ogg"
+        )
+
+        if not transcribed_text:
+            await status_msg.edit_text("❌ দুঃখিত, আপনার ভয়েস থেকে কোনো কথা স্পষ্টভাবে শনাক্ত করা যায়নি। অনুগ্রহ করে আরেকবার স্পষ্ট করে বলুন।")
+            return
+
+        # Show transcription feedback
+        await status_msg.edit_text(
+            f"🗣️ *আপনি বলেছেন:*\n\"{transcribed_text}\"\n\n⏳ প্রসেস করা হচ্ছে...",
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+        await process_user_text(update, context, transcribed_text, voice_status_msg=status_msg)
+
+    except Exception as e:
+        logger.error(f"Error handling voice message: {e}")
+        await update.message.reply_text(f"❌ ভয়েস প্রসেস করতে সমস্যা হয়েছে: {str(e)}")
+
+async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, voice_status_msg=None):
+    """Unified handler for processing both typed and voice-transcribed user input."""
+    user = update.effective_user
 
     # Extract any email addresses in the user's message
     email_pattern = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
@@ -923,6 +973,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Error handling natural language TA: {e}")
             await update.message.reply_text(f"❌ টেকনিক্যাল এনালাইসিস তৈরিতে সমস্যা হয়েছে: {str(e)}")
+            return
+
+    # Check for natural language reminder triggers (e.g. "আমাকে ২০ মিনিট পর রিমাইন্ডার দাও চা খেতে হবে")
+    if any(k in lower_text for k in ["রিমাইন্ডার", "মনে করিয়ে", "মনে করিও", "remind"]) and any(w in lower_text for w in ["মিনিট", "min", "minute", "ঘণ্টা", "ঘন্টা", "hour"]):
+        min_match = re.search(r'(\d+)\s*(?:মিনিট|min|minutes|minute|m)', lower_text)
+        hour_match = re.search(r'(\d+)\s*(?:ঘণ্টা|ঘন্টা|hour|hours|h)', lower_text)
+        calc_mins = None
+        if min_match:
+            calc_mins = int(min_match.group(1))
+        elif hour_match:
+            calc_mins = int(hour_match.group(1)) * 60
+
+        if calc_mins:
+            clean_task = re.sub(r'(\d+)\s*(?:মিনিট|min|minutes|minute|m|ঘণ্টা|ঘন্টা|hour|hours)\s*(?:পর|later)?', '', text, flags=re.IGNORECASE)
+            clean_task = re.sub(r'(আমাকে|রিমাইন্ডার|দাও|সেট|কর|মনে|করিয়ে|দিও|remind|me|to|in)', '', clean_task, flags=re.IGNORECASE).strip()
+            if not clean_task:
+                clean_task = "জরুরি কাজ"
+            remind_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=calc_mins)
+            rem_id = database.add_reminder(user.id, clean_task, remind_at.isoformat())
+            rem_reply = f"✅ রিমাইন্ডার সেট করা হয়েছে! (ID: {rem_id})\n⏰ সময়: {calc_mins} মিনিট পর\n📝 কাজ: *{clean_task}*"
+            await update.message.reply_text(rem_reply, parse_mode=ParseMode.MARKDOWN)
+            database.add_message(user.id, "user", text)
+            database.add_message(user.id, "assistant", f"[Reminder set: {clean_task} in {calc_mins}m]")
             return
 
     # Check for web search triggers
@@ -1154,7 +1227,8 @@ def main():
     app.add_handler(CommandHandler("signal", ta_command))
     app.add_handler(CommandHandler("candledissect", ta_command))
 
-    # Register Text Message Handler
+    # Register Voice and Text Message Handlers
+    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     # Register Background Reminder Poller (every 15 seconds)

@@ -38,7 +38,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(f"{BOT_NAME} 24/7 Assistant is running healthy! (v1.2-reports-ready)".encode("utf-8"))
+        self.wfile.write(f"{BOT_NAME} 24/7 Assistant is running healthy! (v1.3-apps-script)".encode("utf-8"))
 
     def log_message(self, format, *args):
         pass # Suppress access logs to keep console clean

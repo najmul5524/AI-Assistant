@@ -244,3 +244,4 @@ if __name__ == "__main__":
         print("Item:", items[0]["title"])
         res = analyze_forex_news_with_ai(items[0]["title"])
         print("\nAnalysis Result:\n", res)
+

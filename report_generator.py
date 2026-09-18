@@ -17,18 +17,18 @@ from openpyxl.utils import get_column_letter
 
 from config import REPORTS_DIR, BOT_NAME, BASE_DIR
 
-# Register Bengali Unicode Font (Kalpurush)
-DEFAULT_FONT = "Helvetica"
-DEFAULT_FONT_BOLD = "Helvetica-Bold"
-
 _font_path = BASE_DIR / "fonts" / "kalpurush.ttf"
+HAS_KALPURUSH = False
 if _font_path.exists():
     try:
         pdfmetrics.registerFont(TTFont("Kalpurush", str(_font_path)))
-        DEFAULT_FONT = "Kalpurush"
-        DEFAULT_FONT_BOLD = "Kalpurush"
+        HAS_KALPURUSH = True
     except Exception as e:
         print(f"Could not register Kalpurush font: {e}")
+
+def _has_bengali(text: str) -> bool:
+    """Returns True if string contains Bengali Unicode characters."""
+    return any('\u0980' <= c <= '\u09ff' for c in text)
 
 def _clean_text_for_pdf(text: str) -> str:
     """Escapes XML entities for ReportLab Paragraphs and converts bold markdown."""
@@ -60,11 +60,16 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
 
     styles = getSampleStyleSheet()
 
+    # Determine font: Use Kalpurush if Bengali is present, otherwise crisp Helvetica
+    is_bn = _has_bengali(title) or _has_bengali(text_content)
+    font_regular = "Kalpurush" if (is_bn and HAS_KALPURUSH) else "Helvetica"
+    font_bold = "Kalpurush" if (is_bn and HAS_KALPURUSH) else "Helvetica-Bold"
+
     # Custom typography styles supporting Bengali & English
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
-        fontName=DEFAULT_FONT_BOLD,
+        fontName=font_bold,
         fontSize=18,
         leading=24,
         textColor=colors.HexColor('#0F172A'),
@@ -75,7 +80,7 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     meta_style = ParagraphStyle(
         'DocMeta',
         parent=styles['Normal'],
-        fontName=DEFAULT_FONT,
+        fontName=font_regular,
         fontSize=9,
         leading=13,
         textColor=colors.HexColor('#64748B'),
@@ -85,7 +90,7 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     heading_style = ParagraphStyle(
         'SectionHeading',
         parent=styles['Heading2'],
-        fontName=DEFAULT_FONT_BOLD,
+        fontName=font_bold,
         fontSize=12,
         leading=17,
         textColor=colors.HexColor('#1E293B'),
@@ -96,7 +101,7 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     body_style = ParagraphStyle(
         'BodyDark',
         parent=styles['Normal'],
-        fontName=DEFAULT_FONT,
+        fontName=font_regular,
         fontSize=10,
         leading=15,
         textColor=colors.HexColor('#334155'),
@@ -106,7 +111,7 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     bullet_style = ParagraphStyle(
         'BulletText',
         parent=styles['Normal'],
-        fontName=DEFAULT_FONT,
+        fontName=font_regular,
         fontSize=10,
         leading=15,
         textColor=colors.HexColor('#334155'),

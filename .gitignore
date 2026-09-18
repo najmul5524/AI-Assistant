@@ -19,3 +19,11 @@ __pycache__/
 env/
 venv/
 ENV/
+
+# Google Calendar secrets & local tokens
+credentials.json
+token.json
+service_account.json
+ff_calendar_cache.json
+*.pdf
+*.xlsx

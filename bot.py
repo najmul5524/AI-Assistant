@@ -19,6 +19,7 @@ from telegram.ext import (
 
 import os
 import threading
+import zoneinfo
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from config import (
@@ -30,11 +31,17 @@ from config import (
     GOOGLE_SCRIPT_URL,
     RESEND_API_KEY,
     BREVO_API_KEY,
+    FOREX_MIN_IMPACT,
+    FOREX_CURRENCIES,
+    FOREX_REMINDER_MINUTES,
+    FOREX_DAILY_SYNC_TIME,
 )
 import database
 import tools
 import report_generator
 import email_service
+import forex_service
+import google_calendar_service
 from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -153,6 +160,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"আমি আপনার দৈনন্দিন যেকোনো কাজ, ইমেইল, রিপোর্ট তৈরি, ওয়েব সার্চ ও প্ল্যানিংয়ে সাহায্য করতে পারি।\n\n"
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
+        f"• `/forex` - আজকের গুরুত্বপূর্ণ ফরেক্স নিউজ দেখা\n"
+        f"• `/forex_sync` - Google Calendar-এ নিউজ রিমাইন্ডার সিঙ্ক করা\n"
         f"• `/report <বিষয়>` - সরাসরি প্রফেশনাল PDF রিপোর্ট তৈরি\n"
         f"• `/email <প্রাপক> <বিষয়> | <বার্তা>` - আসল ইমেইল পাঠানো\n"
         f"• `/search <প্রশ্ন>` - ইন্টারনেট থেকে লাইভ সার্চ\n"
@@ -175,6 +184,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
         f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা কাজ সরাসরি মেসেজ হিসেবে লিখুন।\n"
+        f"• `/forex`: আজকের High & Medium Impact ফরেক্স ক্যালেন্ডার নিউজ দেখা। (`/forex all` দিয়ে পুরো সপ্তাহেরটা দেখা যাবে)\n"
+        f"• `/forex_sync`: আজকের ফরেক্স নিউজ Google Calendar-এ রিমাইন্ডার অ্যালার্টসহ স্বয়ংক্রিয়ভাবে সিঙ্ক করা।\n"
         f"• `/report <বিষয়>`: যেমন `/report এআই ও ভবিষ্যৎ চাকরি বাজার` (পিডিএফ তৈরি হবে)\n"
         f"• `/email <to> <subject> | <body>`: যেমন `/email friend@test.com আপডেট | সালাম, কাজ শেষ হয়েছে।`\n"
         f"• `/search <বিষয়>`: যেমন `/search আজকের সোনার দাম কত`\n"
@@ -397,6 +408,92 @@ async def email_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success, result_msg = email_service.send_email(to_email=to_email, subject=subject, body=body_part)
     await update.message.reply_text(result_msg, parse_mode=ParseMode.MARKDOWN)
 
+async def forex_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /forex [all | currency] - View Forex Factory economic events."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    args = context.args if context.args else []
+    target_date = None
+    filter_curr = None
+
+    for arg in args:
+        arg_clean = arg.strip().upper()
+        if arg_clean in ["ALL", "WEEK"]:
+            target_date = "all"
+        elif arg_clean in ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "NZD", "CNY"]:
+            filter_curr = [arg_clean]
+
+    currencies = filter_curr if filter_curr else FOREX_CURRENCIES
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+
+    events = forex_service.get_forex_events(
+        target_date=target_date,
+        min_impact=FOREX_MIN_IMPACT,
+        currencies=currencies,
+        tz_name=DEFAULT_TIMEZONE
+    )
+
+    header = "সাপ্তাহিক ফরেক্স ক্যালেন্ডার" if target_date == "all" else "আজকের ফরেক্স ইকোনমিক নিউজ"
+    msg = forex_service.format_forex_telegram_message(events, header_title=header)
+    msg += "\n\n💡 _Google Calendar-এ অ্যালার্ট রিমাইন্ডার সেট করতে লিখুন:_ `/forex_sync`"
+
+    try:
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await update.message.reply_text(msg)
+
+async def forex_sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /forex_sync - Sync Forex news into Google Calendar with alerts."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    status_msg = await update.message.reply_text("⏳ Forex Factory থেকে নিউজ সংগ্রহ করে Google Calendar-এ সিঙ্ক করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
+
+    events = forex_service.get_forex_events(
+        target_date=None,
+        min_impact=FOREX_MIN_IMPACT,
+        currencies=FOREX_CURRENCIES,
+        tz_name=DEFAULT_TIMEZONE
+    )
+
+    if not events:
+        await status_msg.edit_text("ℹ️ আজ কোনো গুরুত্বপূর্ণ (High/Medium Impact) ফরেক্স নিউজ নেই, তাই ক্যালেন্ডারে কোনো ইভেন্ট যোগ করার প্রয়োজন নেই।")
+        return
+
+    sync_res = google_calendar_service.sync_forex_events_to_calendar(
+        events=events,
+        reminder_minutes=FOREX_REMINDER_MINUTES,
+        tz_name=DEFAULT_TIMEZONE
+    )
+
+    if sync_res["status"] == "not_configured":
+        reply_text = (
+            f"⚠️ *Google Calendar এখনও কনফিগার করা হয়নি!*\n\n"
+            f"আজকের মোট `{len(events)}` টি নিউজ পাওয়া গেছে, কিন্তু Google Calendar-এ স্বয়ংক্রিয়ভাবে যুক্ত করার জন্য একবার অথেনটিকেশন প্রয়োজন।\n\n"
+            f"👉 আপনার টার্মিনালে বা পিসিতে রান করুন:\n`python setup_google_calendar.py`\n\n"
+            f"নিচে আজকের গুরুত্বপূর্ণ নিউজের তালিকা দেওয়া হলো:\n\n"
+            + forex_service.format_forex_telegram_message(events)
+        )
+        await status_msg.edit_text(reply_text, parse_mode=ParseMode.MARKDOWN)
+        return
+
+    reply_text = (
+        f"✅ *Google Calendar Sync সম্পন্ন!*\n\n"
+        f"📅 {sync_res['message']}\n"
+        f"🔔 রিমাইন্ডার: প্রতি নিউজের `{FOREX_REMINDER_MINUTES}` মিনিট আগে নোটিফিকেশন অ্যালার্ট সেট করা হয়েছে।\n\n"
+        + forex_service.format_forex_telegram_message(events)
+    )
+    try:
+        await status_msg.edit_text(reply_text, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await status_msg.edit_text(reply_text)
+
 # ----------------- Message Handler ----------------- #
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -553,6 +650,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         database.add_message(user.id, "assistant", f"[Email sent to {target_email}: {subject}]", model_used=provider_used)
         return
 
+    # Check for natural language Forex calendar triggers
+    lower_text = text.lower()
+    forex_keywords = ["forex", "ফরেক্স", "forexfactory", "forex factory", "economic calendar", "ইকোনমিক ক্যালেন্ডার"]
+    if any(k in lower_text for k in forex_keywords):
+        is_sync_request = any(w in lower_text for w in ["সিঙ্ক", "sync", "calendar", "ক্যালেন্ডার", "রিমাইন্ডার", "reminder", "যুক্ত কর", "সেট কর", "add"])
+        if is_sync_request:
+            await forex_sync_command(update, context)
+            database.add_message(user.id, "user", text)
+            database.add_message(user.id, "assistant", "[Forex Calendar Sync executed]")
+            return
+        else:
+            await forex_command(update, context)
+            database.add_message(user.id, "user", text)
+            database.add_message(user.id, "assistant", "[Forex Events displayed]")
+            return
+
     # Check for web search triggers
     context_data = None
     search_keywords = ["search", "আজকের", "খবর", "weather", "আবহাওয়া", "news", "price", "দাম", "latest", "বর্তমান"]
@@ -607,6 +720,50 @@ async def check_scheduled_reminders(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Failed to dispatch reminder {rem_id} to {user_id}: {e}")
 
+async def daily_forex_sync_job(context: ContextTypes.DEFAULT_TYPE):
+    """Daily automated job to sync today's forex news to Google Calendar and send alert to users."""
+    logger.info("Executing scheduled daily Forex sync job...")
+    try:
+        events = forex_service.get_forex_events(
+            target_date=None,
+            min_impact=FOREX_MIN_IMPACT,
+            currencies=FOREX_CURRENCIES,
+            tz_name=DEFAULT_TIMEZONE
+        )
+
+        if not events:
+            logger.info("Daily Forex Sync: No high/medium events found today.")
+            return
+
+        sync_note = ""
+        if google_calendar_service.is_calendar_configured():
+            res = google_calendar_service.sync_forex_events_to_calendar(
+                events=events,
+                reminder_minutes=FOREX_REMINDER_MINUTES,
+                tz_name=DEFAULT_TIMEZONE
+            )
+            logger.info(f"Daily Forex Calendar Sync: {res['message']}")
+            sync_note = f"\n\n🔔 *Google Calendar:* {res['message']}"
+
+        briefing_msg = (
+            f"☀️ *শুভ সকাল! আজকের গুরুত্বপূর্ণ ফরেক্স নিউজ ব্রিফিং*\n\n"
+            + forex_service.format_forex_telegram_message(events)
+            + sync_note
+        )
+
+        target_uids = ALLOWED_USER_IDS if ALLOWED_USER_IDS else []
+        for uid in target_uids:
+            try:
+                await context.bot.send_message(
+                    chat_id=uid,
+                    text=briefing_msg,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except Exception as send_err:
+                logger.warning(f"Could not send daily forex briefing to {uid}: {send_err}")
+    except Exception as e:
+        logger.error(f"Error in daily_forex_sync_job: {e}")
+
 # ----------------- Main Launcher ----------------- #
 
 def main():
@@ -633,6 +790,8 @@ def main():
     app.add_handler(CommandHandler("reminders", reminders_command))
     app.add_handler(CommandHandler("report", report_command))
     app.add_handler(CommandHandler("email", email_command))
+    app.add_handler(CommandHandler("forex", forex_command))
+    app.add_handler(CommandHandler("forex_sync", forex_sync_command))
 
     # Register Text Message Handler
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
@@ -641,6 +800,16 @@ def main():
     if app.job_queue:
         app.job_queue.run_repeating(check_scheduled_reminders, interval=15, first=5)
         print("⏰ Reminder scheduler activated (running every 15s).")
+
+        # Schedule daily Forex Sync & Morning Briefing
+        try:
+            hour_str, min_str = FOREX_DAILY_SYNC_TIME.split(":")
+            tz = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+            sync_time = datetime.time(hour=int(hour_str), minute=int(min_str), tzinfo=tz)
+            app.job_queue.run_daily(daily_forex_sync_job, time=sync_time)
+            print(f"📈 Daily Forex sync scheduled for {FOREX_DAILY_SYNC_TIME} ({DEFAULT_TIMEZONE}).")
+        except Exception as e:
+            logger.warning(f"Could not schedule daily forex sync: {e}")
 
     # Start background cloud health-check server (for Render / Hugging Face Spaces)
     threading.Thread(target=start_health_server, daemon=True).start()

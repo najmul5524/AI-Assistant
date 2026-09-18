@@ -65,6 +65,13 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
 GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL", "").strip()
 
+# Forex Factory & Google Calendar Settings
+FOREX_MIN_IMPACT = os.getenv("FOREX_MIN_IMPACT", "Medium").strip()
+_forex_curr_raw = os.getenv("FOREX_CURRENCIES", "USD,EUR,GBP,JPY,AUD,CAD,CHF,NZD").strip()
+FOREX_CURRENCIES = [c.strip().upper() for c in _forex_curr_raw.split(",") if c.strip()]
+FOREX_REMINDER_MINUTES = int(os.getenv("FOREX_REMINDER_MINUTES", "15"))
+FOREX_DAILY_SYNC_TIME = os.getenv("FOREX_DAILY_SYNC_TIME", "06:30").strip()
+
 # Reports Output Directory
 REPORTS_DIR = BASE_DIR / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)
@@ -74,6 +81,7 @@ SYSTEM_PROMPT = f"""You are {BOT_NAME}, an exceptionally capable, intelligent, a
 Your goal is to assist the user with everyday tasks, planning, research, coding, writing, reminders, calculations, and problem solving.
 
 Key capabilities:
+- You have active built-in capabilities to track Forex Factory economic calendar news and sync reminders into Google Calendar.
 - You have active built-in capabilities to generate professional PDF and Excel reports.
 - You have an active automated email system (SMTP) configured to send emails and attachments directly to specified email addresses.
 - NEVER claim that you cannot send emails or generate files due to security or direct access limitations. The system handles file generation and email delivery on your behalf.

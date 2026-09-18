@@ -39,40 +39,65 @@ from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        import json, sys
-        diag = {
-            "bot": BOT_NAME,
-            "version": "v1.7-pymupdf-active",
-            "python_version": sys.version,
-            "has_kalpurush": (BASE_DIR / "fonts" / "kalpurush.ttf").exists(),
-            "google_script_configured": bool(GOOGLE_SCRIPT_URL),
-            "brevo_configured": bool(BREVO_API_KEY),
-            "resend_key_configured": bool(RESEND_API_KEY)
-        }
-        try:
-            import uharfbuzz
-            diag["uharfbuzz"] = getattr(uharfbuzz, "__version__", "installed")
-        except Exception as e:
-            diag["uharfbuzz_error"] = str(e)
-            
-        try:
-            import fpdf
-            from fpdf import FPDF
-            pdf = FPDF()
-            font_file = BASE_DIR / "fonts" / "kalpurush.ttf"
-            if font_file.exists():
-                pdf.add_font("Kalpurush", "", str(font_file))
-                pdf.set_text_shaping(True)
-                diag["shaping_test"] = "SUCCESS"
-            else:
-                diag["shaping_test"] = "FONT_NOT_FOUND"
-        except Exception as e:
-            diag["shaping_error"] = str(e)
+        # Cron-job.org (and Render's own health checks) hit this route
+        # frequently just to keep the service awake. cron-job.org caps how
+        # much response body it will read and fails the job as "output too
+        # large" if that's exceeded — their own guidance is to return
+        # nothing, or a short status like "OK", from any monitored URL.
+        # So the default route below is intentionally minimal; the old
+        # verbose JSON diagnostics (font checks, uharfbuzz, pdf shaping,
+        # exception text) still exist, but only behind /diagnostics for
+        # manual debugging, so they never leak into a routine cron ping.
+        if self.path.rstrip("/") in ("", "/health", "/ping"):
+            body = b"OK"
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
-        self.send_response(200)
-        self.send_header("Content-type", "application/json; charset=utf-8")
+        if self.path.rstrip("/") == "/diagnostics":
+            import json, sys
+            diag = {
+                "bot": BOT_NAME,
+                "version": "v1.7-pymupdf-active",
+                "python_version": sys.version,
+                "has_kalpurush": (BASE_DIR / "fonts" / "kalpurush.ttf").exists(),
+                "google_script_configured": bool(GOOGLE_SCRIPT_URL),
+                "brevo_configured": bool(BREVO_API_KEY),
+                "resend_key_configured": bool(RESEND_API_KEY)
+            }
+            try:
+                import uharfbuzz
+                diag["uharfbuzz"] = getattr(uharfbuzz, "__version__", "installed")
+            except Exception as e:
+                diag["uharfbuzz_error"] = str(e)
+
+            try:
+                import fpdf
+                from fpdf import FPDF
+                pdf = FPDF()
+                font_file = BASE_DIR / "fonts" / "kalpurush.ttf"
+                if font_file.exists():
+                    pdf.add_font("Kalpurush", "", str(font_file))
+                    pdf.set_text_shaping(True)
+                    diag["shaping_test"] = "SUCCESS"
+                else:
+                    diag["shaping_test"] = "FONT_NOT_FOUND"
+            except Exception as e:
+                diag["shaping_error"] = str(e)
+
+            body = json.dumps(diag, indent=2).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        self.send_response(404)
         self.end_headers()
-        self.wfile.write(json.dumps(diag, indent=2).encode("utf-8"))
 
     def log_message(self, format, *args):
         pass # Suppress access logs to keep console clean

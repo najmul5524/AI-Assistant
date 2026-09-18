@@ -593,7 +593,7 @@ async def forex_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loop = asyncio.get_running_loop()
         pdf_path = await loop.run_in_executor(None, forex_digest_service.generate_weekly_intelligence_report)
 
-        caption = "📊 *সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স রিপোর্ট*\n\n✅ গত সপ্তাহের পর্যালোচনা ও আগামী সপ্তাহের প্রাতিষ্ঠানিক রোডম্যাপ প্রস্তুত সম্পন্ন!"
+        caption = "📊 *সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স রিপোর্ট*\n\n✅ গত সপ্তাহের সমস্ত নিউজ, গোল্ড, Nasdaq 100, S&P 500 চার্ট ও রোডম্যাপ প্রস্তুত! (বাংলাদেশ সময়)"
         with open(pdf_path, "rb") as doc_file:
             await context.bot.send_document(
                 chat_id=update.effective_chat.id,
@@ -624,7 +624,7 @@ async def forecast_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYP
         loop = asyncio.get_running_loop()
         pdf_path = await loop.run_in_executor(None, forex_digest_service.generate_daily_forecast_pdf)
 
-        caption = "📊 *আগামীকালের মার্কেট পূর্বাভাস ও টেকনিক্যাল চার্ট রিপোর্ট*\n\n✅ গোল্ড, সিলভার, ফিউচার্স ও ফরেক্স পেয়ারের প্রাইস রেঞ্জ চিত্রসহ প্রস্তুত!"
+        caption = "📊 *আগামীকালের মার্কেট পূর্বাভাস ও টেকনিক্যাল চার্ট রিপোর্ট*\n\n✅ গোল্ড, সিলভার, Nasdaq 100, S&P 500 ও ফরেক্স পেয়ারের রেঞ্জ চিত্রসহ প্রস্তুত! (বাংলাদেশ সময়)"
         with open(pdf_path, "rb") as doc_file:
             await context.bot.send_document(
                 chat_id=update.effective_chat.id,

@@ -104,7 +104,7 @@ def main():
     # 3. Send both to Telegram
     print("\n[3/3] Sending forecast text and PDF to Telegram...")
     send_telegram_split_text(digest_text)
-    caption = "📊 *আগামীকালের মার্কেট পূর্বাভাস ও টেকনিক্যাল চার্ট*\n\n✅ গোল্ড, সিলভার, ফিউচার্স ও ফরেক্সের টেকনিক্যাল রেঞ্জ চিত্রসহ প্রস্তুত!"
+    caption = "📊 *আগামীকালের মার্কেট পূর্বাভাস ও টেকনিক্যাল চার্ট*\n\n✅ গোল্ড, সিলভার, Nasdaq 100, S&P 500 ও ফরেক্সের টেকনিক্যাল রেঞ্জ চিত্রসহ প্রস্তুত! (বাংলাদেশ সময়)"
     send_telegram_document(pdf_path, caption=caption)
 
     print("\n" + "=" * 60)

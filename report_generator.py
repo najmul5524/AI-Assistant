@@ -9,11 +9,19 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from config import REPORTS_DIR, BOT_NAME, BASE_DIR
+import zoneinfo
+from config import REPORTS_DIR, BOT_NAME, BASE_DIR, DEFAULT_TIMEZONE
 
 _font_path = BASE_DIR / "fonts" / "kalpurush.ttf"
 FONTS_DIR = BASE_DIR / "fonts"
 HAS_KALPURUSH = _font_path.exists()
+
+def _get_bd_now() -> datetime.datetime:
+    try:
+        tz = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    except Exception:
+        tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+    return datetime.datetime.now(tz)
 
 def _has_bengali(text: str) -> bool:
     """Returns True if string contains Bengali Unicode characters."""
@@ -21,7 +29,8 @@ def _has_bengali(text: str) -> bool:
 
 def _markdown_to_html(title: str, text_content: str) -> str:
     """Converts structured markdown into high-definition HTML for PyMuPDF Story."""
-    now_str = datetime.datetime.now().strftime("%d %B, %Y | %I:%M %p")
+    now_dt = _get_bd_now()
+    now_str = now_dt.strftime("%d %B, %Y | %I:%M %p (বাংলাদেশ সময়)")
     
     html_body = []
     lines = text_content.split("\n")
@@ -135,7 +144,7 @@ p {{
 </style>
 </head>
 <body>
-<div class="header-meta">{BOT_NAME} 24/7 AI • Confidential Executive Report</div>
+<div class="header-meta">{BOT_NAME} 24/7 AI • Confidential Executive Report • বাংলাদেশ সময় (BST)</div>
 <h1 class="doc-title">{title}</h1>
 <div class="date-bar">জেনারেটেড বাই: {BOT_NAME} AI | সময়: {now_str}</div>
 <div class="divider"></div>

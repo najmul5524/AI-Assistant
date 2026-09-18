@@ -89,7 +89,7 @@ def generate_daily_digest(target_date: Optional[datetime.date] = None, tz_name: 
 
     # 3. Targeted live market intelligence searches (Metals, Futures, Forex, Social / X.com sentiment)
     metals_intel = search_market_intel("gold price forecast technical levels XAU USD", max_items=3)
-    futures_intel = search_market_intel("S&P 500 futures crude oil outlook forecast", max_items=3)
+    futures_intel = search_market_intel("Nasdaq 100 S&P 500 futures crude oil forecast technical levels", max_items=4)
     forex_intel = search_market_intel("forex EUR USD USD JPY outlook technical levels", max_items=3)
     sentiment_intel = search_market_intel("forex gold technical analysis sentiment x.com", max_items=3)
 
@@ -132,7 +132,7 @@ Context Data:
 === Metals Intelligence (Gold / Silver) ===
 {metals_context}
 
-=== Futures & Commodities Intelligence (S&P 500 / Crude Oil) ===
+=== Futures & Commodities Intelligence (Nasdaq 100 / S&P 500 / Crude Oil) ===
 {futures_context}
 
 === Forex Intelligence ===
@@ -145,7 +145,7 @@ Write a comprehensive, highly professional, and structured report in fluent Beng
 Use markdown headers, emojis, and clear price levels:
 
 📊 **দৈনিক মার্কেট ডাইজেস্ট ও আগামীকালের প্রাইস মুভমেন্ট পূর্বাভাস**
-📅 **বিশ্লেষণ তারিখ:** {target_date.strftime('%d %B %Y')} | ⏰ **রিলিজ:** রাত ১০:০০ টা (Asia/Dhaka)
+📅 **বিশ্লেষণ তারিখ:** {target_date.strftime('%d %B %Y')} | ⏰ **রিলিজ:** রাত ১০:০০ টা (বাংলাদেশ সময়)
 
 🌐 **১. গ্লোবাল ম্যাক্রো থিম ও ট্রেডার সেন্টিমেন্ট (Macro & X.com Sentiment):**
 - সারাদিনের মূল ঘটনা, ফেড/সেন্ট্রাল ব্যাংকের পলিসি প্রভাব এবং সোশ্যাল মিডিয়া (X.com) ও ওয়াল স্ট্রিট ট্রেডারদের বর্তমান মানসিকতা (Bullish/Bearish/Cautious)।
@@ -158,11 +158,15 @@ Use markdown headers, emojis, and clear price levels:
   - **ট্রেডিং অ্যাকশন প্ল্যান:** কোন লেভেল ভাঙলে বাই বা সেল সুযোগ।
 - ⚪ **Silver (XAG/USD):** সাপোর্ট, রেজিস্ট্যান্স এবং সামগ্রিক প্রত্যাশিত দিক।
 
-📈 **৩. সিলেক্টেড ফিউচার্স ও ইনডেক্স পূর্বাভাস (Futures & Commodities):**
-- 🇺🇸 **S&P 500 (US500) & Nasdaq (US100) Futures:**
+📈 **৩. সিলেক্টেড ফিউচার্স ও স্টক ইনডেক্স পূর্বাভাস (Futures, Equities & Commodities):**
+- 💻 **Nasdaq 100 (NAS100 / US100):**
+  - **সম্ভাব্য গতিপথ ও বায়াস:** [🟢 বুলিশ / 🔴 বেয়ারিশ / 🟡 কনসোলিডেশন]
+  - **কী পিভট ও টেকনিক্যাল লেভেল:** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
+  - **ড্রাইভার:** মেগা-ক্যাপ টেক স্টকস (Apple, Nvidia, Microsoft), এআই সেক্টর সেন্টিমেন্ট এবং বন্ড ইল্ড।
+- 🇺🇸 **S&P 500 (US500) Futures:**
   - **সম্ভাব্য দিক ও সেন্টিমেন্ট:** [বুলিশ / বেয়ারিশ / কনসোলিডেশন]
   - **কী পিভট ও টেকনিক্যাল লেভেল:** সাপোর্ট ও রেজিস্ট্যান্স লেভেল।
-  - **ড্রাইভার:** আর্নিংস, সুদের হারের প্রভাব ও রিস্ক-অন/রিস্ক-অফ মুড।
+  - **ড্রাইভার:** আর্নিংস, সুদের হারের প্রভাব ও সামগ্রিক মার্কিন মার্কেট রিস্ক সেন্টিমেন্ট।
 - 🛢️ **US Crude Oil Futures (WTI / Brent):**
   - তেলের সম্ভাব্য মুভমেন্ট রেঞ্জ ($... - $...) এবং ওপেক/ভূ-রাজনীতি প্রভাব।
 - 🏛️ **US 10-Year Treasury Yields & DXY:** বন্ড ইল্ড এবং ডলার ইনডেক্সের ভবিষ্যৎ গতিপথ।
@@ -214,7 +218,7 @@ def generate_weekly_intelligence_report(filename_prefix: str = "Weekly_Forex_Rep
 
     # 3. Targeted Weekly Macro Search Summaries
     weekly_macro_news = search_market_intel("forex market weekly wrap up review Fed FOMC", max_items=4)
-    weekly_metals_news = search_market_intel("gold S&P 500 oil weekly market performance review", max_items=4)
+    weekly_metals_news = search_market_intel("gold Nasdaq 100 S&P 500 oil weekly market performance review", max_items=4)
 
     search_macro_summary = "\n".join([f"- {m}" for m in weekly_macro_news]) if weekly_macro_news else "Steady global trade."
     search_metals_summary = "\n".join([f"- {m}" for m in weekly_metals_news]) if weekly_metals_news else "Precious metals steady."
@@ -233,7 +237,7 @@ Data Sources:
 === Global Macro & Central Bank Review ===
 {search_macro_summary}
 
-=== Metals (Gold/Silver) & Commodities (Crude Oil, S&P 500) Review ===
+=== Metals, Commodities & Indices (Gold/Silver, Crude Oil, Nasdaq 100, S&P 500) Review ===
 {search_metals_summary}
 
 Write the complete report in high-quality, professional Bengali (বাংলা ভাষায় পূর্ণাঙ্গ ও প্রাতিষ্ঠানিক এক্সিকিউটিভ রিপোর্ট লিখুন)।
@@ -255,9 +259,10 @@ Structure with markdown headings (##, ###) and clean bullet points:
 - **Silver (XAG/USD):** রূপার গতিপথ ও ইন্ডাস্ট্রিয়াল চাহিদা।
 - **Crude Oil (WTI/Brent):** ভূ-রাজনীতি ও ওপেক প্লাসের সরবরাহ নীতি।
 
-## ৪. ফিউচার্স ও বৈশ্বিক স্টক ইনডেক্স (Equities & Yields)
-- **S&P 500 (US500) & Nasdaq:** আর্নিংস এবং রিস্ক সেন্টিমেন্ট বিশ্লেষণ।
-- **US 10-Year Treasury Yield:** বন্ড মার্কেটের সংকেত।
+## ৪. ফিউচার্স ও বৈশ্বিক স্টক ইনডেক্স (Nasdaq 100, S&P 500 & Yields)
+- **Nasdaq 100 (NAS100 / US100):** মেগা-ক্যাপ টেক জায়ান্টস (Apple, Microsoft, Nvidia), সেমিকন্ডাক্টর ও এআই খাতের আর্নিংস প্রভাব।
+- **S&P 500 (US500):** মার্কিন ইকুইটি মার্কেট সেন্টিমেন্ট, আর্নিংস এবং রিস্ক-অন/রিস্ক-অফ প্রবাহ।
+- **US 10-Year Treasury Yield:** বন্ড ইল্ডের গতিপথ ও মার্কেট ভ্যালুয়েশনে এর সংকেত।
 
 ## ৫. আগামী সপ্তাহের হাই-ইমপ্যাক্ট ক্যালেন্ডার ও রিস্ক ম্যানেজমেন্ট গাইড (Trading Strategy & Risk)
 - আগামী সপ্তাহের কোন কোন দিনে বড় মুভমেন্ট আসবে, টেক-প্রফিট, স্টপ লস ও ক্যাপিটাল সুরক্ষার প্রাতিষ্ঠানিক পরামর্শ।

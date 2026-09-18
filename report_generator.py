@@ -8,12 +8,27 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-from config import REPORTS_DIR, BOT_NAME
+from config import REPORTS_DIR, BOT_NAME, BASE_DIR
+
+# Register Bengali Unicode Font (Kalpurush)
+DEFAULT_FONT = "Helvetica"
+DEFAULT_FONT_BOLD = "Helvetica-Bold"
+
+_font_path = BASE_DIR / "fonts" / "kalpurush.ttf"
+if _font_path.exists():
+    try:
+        pdfmetrics.registerFont(TTFont("Kalpurush", str(_font_path)))
+        DEFAULT_FONT = "Kalpurush"
+        DEFAULT_FONT_BOLD = "Kalpurush"
+    except Exception as e:
+        print(f"Could not register Kalpurush font: {e}")
 
 def _clean_text_for_pdf(text: str) -> str:
     """Escapes XML entities for ReportLab Paragraphs and converts bold markdown."""
@@ -27,6 +42,7 @@ def _clean_text_for_pdf(text: str) -> str:
 def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "report") -> Path:
     """
     Generates an executive-quality PDF report using ReportLab.
+    Supports English and Bengali seamlessly via Kalpurush Unicode font.
     Returns the Path to the generated PDF.
     """
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -44,12 +60,12 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
 
     styles = getSampleStyleSheet()
 
-    # Custom typography styles
+    # Custom typography styles supporting Bengali & English
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Heading1'],
-        fontName='Helvetica-Bold',
-        fontSize=20,
+        fontName=DEFAULT_FONT_BOLD,
+        fontSize=18,
         leading=24,
         textColor=colors.HexColor('#0F172A'),
         alignment=TA_LEFT,
@@ -59,9 +75,9 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     meta_style = ParagraphStyle(
         'DocMeta',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName=DEFAULT_FONT,
         fontSize=9,
-        leading=12,
+        leading=13,
         textColor=colors.HexColor('#64748B'),
         spaceAfter=12
     )
@@ -69,9 +85,9 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     heading_style = ParagraphStyle(
         'SectionHeading',
         parent=styles['Heading2'],
-        fontName='Helvetica-Bold',
-        fontSize=13,
-        leading=16,
+        fontName=DEFAULT_FONT_BOLD,
+        fontSize=12,
+        leading=17,
         textColor=colors.HexColor('#1E293B'),
         spaceBefore=12,
         spaceAfter=6
@@ -80,9 +96,9 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     body_style = ParagraphStyle(
         'BodyDark',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName=DEFAULT_FONT,
         fontSize=10,
-        leading=14,
+        leading=15,
         textColor=colors.HexColor('#334155'),
         spaceAfter=6
     )
@@ -90,9 +106,9 @@ def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "r
     bullet_style = ParagraphStyle(
         'BulletText',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName=DEFAULT_FONT,
         fontSize=10,
-        leading=14,
+        leading=15,
         textColor=colors.HexColor('#334155'),
         leftIndent=15,
         spaceAfter=4

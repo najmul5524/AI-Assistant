@@ -12,14 +12,62 @@ from config import (
     SMTP_PASSWORD,
     SMTP_SERVER,
     SMTP_PORT,
+    RESEND_API_KEY,
     BOT_NAME
 )
 
 logger = logging.getLogger(__name__)
 
 def is_email_configured() -> bool:
-    """Check if SMTP credentials are fully provided."""
-    return bool(SMTP_EMAIL and SMTP_PASSWORD)
+    """Check if either Resend API or SMTP credentials are provided."""
+    return bool(RESEND_API_KEY or (SMTP_EMAIL and SMTP_PASSWORD))
+
+def _send_via_resend(
+    to_email: str,
+    subject: str,
+    body: str,
+    attachment_path: Optional[Path] = None
+) -> Tuple[bool, str]:
+    """Sends email via Resend HTTPS API (Port 443 - never blocked by cloud hosts)."""
+    import base64
+    import resend
+
+    resend.api_key = RESEND_API_KEY
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; background-color: #f8fafc; padding: 20px; border-radius: 8px;">
+        <div style="white-space: pre-wrap; font-size: 14px;">{body}</div>
+        <hr style="border: none; border-top: 1px solid #cbd5e1; margin: 20px 0;">
+        <p style="font-size: 11px; color: #64748b;">
+            Sent automatically via <b>{BOT_NAME} 24/7 AI Assistant</b>
+        </p>
+    </div>
+    """
+
+    params = {
+        "from": f"{BOT_NAME} AI <onboarding@resend.dev>",
+        "to": [to_email.strip()],
+        "subject": subject.strip(),
+        "html": html_content
+    }
+
+    if attachment_path and Path(attachment_path).is_file():
+        file_obj = Path(attachment_path)
+        with open(file_obj, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+        params["attachments"] = [
+            {
+                "filename": file_obj.name,
+                "content": encoded
+            }
+        ]
+
+    try:
+        email_resp = resend.Emails.send(params)
+        logger.info(f"Resend email dispatched successfully: {email_resp}")
+        return True, f"✅ সফলভাবে ইমেইল পাঠানো হয়েছে (via Resend API):\n📧 প্রাপক: `{to_email}`\n📌 বিষয়: *{subject}*"
+    except Exception as e:
+        logger.error(f"Resend API error: {e}")
+        return False, f"❌ Resend API ত্রুটি: {str(e)}"
 
 def send_email(
     to_email: str,
@@ -43,6 +91,11 @@ def send_email(
     if not to_email or "@" not in to_email:
         return False, "❌ প্রাপকের ইমেইল এড্রেসটি সঠিক নয়।"
 
+    # 1. Primary Cloud-Safe Dispatcher: Resend HTTPS API (never blocked by Render)
+    if RESEND_API_KEY:
+        return _send_via_resend(to_email, subject, body, attachment_path)
+
+    # 2. Fallback to Direct SMTP (for local machines or hosts with open SMTP ports)
     try:
         msg = MIMEMultipart()
         msg["From"] = f"{BOT_NAME} Assistant <{SMTP_EMAIL}>"

@@ -233,7 +233,11 @@ class MultiTierLLMManager:
             messages.append({"role": item["role"], "content": item["content"]})
         messages.append({"role": "user", "content": prompt})
 
-        res = requests.post(url, headers=headers, json={"messages": messages}, timeout=30)
+        payload = {
+            "messages": messages,
+            "max_tokens": 3500
+        }
+        res = requests.post(url, headers=headers, json=payload, timeout=45)
         res.raise_for_status()
         data = res.json()
         if "result" in data and "response" in data["result"]:

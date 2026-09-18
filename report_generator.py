@@ -27,6 +27,14 @@ def _has_bengali(text: str) -> bool:
     """Returns True if string contains Bengali Unicode characters."""
     return any('\u0980' <= c <= '\u09ff' for c in text)
 
+EMOJI_PATTERN = re.compile(r'[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf\u200d\ufe0f]+', flags=re.UNICODE)
+
+def _format_inline(text: str) -> str:
+    """Formats inline bold and italic markdown tags safely."""
+    t = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+    t = re.sub(r'\*(.*?)\*', r'<i>\1</i>', t)
+    return t
+
 def _markdown_to_html(title: str, text_content: str) -> str:
     """Converts structured markdown into high-definition HTML for PyMuPDF Story."""
     now_dt = _get_bd_now()
@@ -35,29 +43,47 @@ def _markdown_to_html(title: str, text_content: str) -> str:
     html_body = []
     lines = text_content.split("\n")
     for line in lines:
-        raw = line.strip()
-        if not raw:
+        stripped = line.strip()
+        if not stripped:
             continue
-            
-        formatted = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', raw)
-        formatted = re.sub(r'\*(.*?)\*', r'<i>\1</i>', formatted)
-        
-        if raw.startswith("### "):
-            h_text = formatted[4:].strip()
+
+        # If it's raw HTML (like the chart container), inject as-is
+        if stripped.startswith("<"):
+            html_body.append(stripped)
+            continue
+
+        # Strip emojis so Kalpurush font never renders broken tofu characters
+        clean_raw = EMOJI_PATTERN.sub('', stripped).strip()
+        if not clean_raw:
+            continue
+
+        is_sub_bullet = line.startswith("  ") or line.startswith("\t")
+
+        # 1. Section Headings (##, #, or numbered like '১. ' / '**১. ')
+        if clean_raw.startswith("### "):
+            h_text = _format_inline(clean_raw[4:].strip())
             html_body.append(f"<h3>{h_text}</h3>")
-        elif raw.startswith("## "):
-            h_text = formatted[3:].strip()
+        elif clean_raw.startswith("## ") or clean_raw.startswith("# "):
+            h_text = _format_inline(clean_raw.lstrip("#").strip())
             html_body.append(f"<h2>{h_text}</h2>")
-        elif raw.startswith("# "):
-            h_text = formatted[2:].strip()
+        elif re.match(r'^(?:\*\*)?[১-৯\d]+[\.\)]\s*', clean_raw):
+            m = re.match(r'^(?:\*\*)?([১-৯\d]+[\.\)]\s*.*?)(?:\*\*)?$', clean_raw)
+            h_text = _format_inline(m.group(1).rstrip(':').strip()) if m else _format_inline(clean_raw)
             html_body.append(f"<h2>{h_text}</h2>")
-        elif raw.startswith("- ") or raw.startswith("* ") or raw.startswith("• "):
-            b_text = formatted[2:].strip()
-            html_body.append(f'<div class="bullet"><span class="dot">•</span> {b_text}</div>')
-        elif raw.startswith("<"):
-            html_body.append(raw)
+        # 2. Bullets & Sub-bullets
+        elif clean_raw.startswith("- ") or clean_raw.startswith("* ") or clean_raw.startswith("• "):
+            b_text = _format_inline(clean_raw[2:].strip())
+            if is_sub_bullet:
+                html_body.append(f'<div class="sub-bullet"><span class="sub-dot">▪</span> {b_text}</div>')
+            else:
+                html_body.append(f'<div class="bullet"><span class="dot">•</span> {b_text}</div>')
+        # 3. Subheadings (short bold lines)
+        elif clean_raw.startswith("**") and clean_raw.endswith("**") and len(clean_raw) < 90:
+            sub_h = _format_inline(clean_raw.strip("*").rstrip(':').strip())
+            html_body.append(f"<h3>{sub_h}</h3>")
         else:
-            html_body.append(f"<p>{formatted}</p>")
+            p_text = _format_inline(clean_raw)
+            html_body.append(f"<p>{p_text}</p>")
             
     body_content = "\n".join(html_body)
     
@@ -87,7 +113,7 @@ body {{
 }}
 h1.doc-title {{
     color: #0f172a;
-    font-size: 19pt;
+    font-size: 18pt;
     line-height: 1.35;
     margin: 0 0 4px 0;
     font-weight: bold;
@@ -99,39 +125,57 @@ h1.doc-title {{
 }}
 .divider {{
     height: 2px;
-    background-color: #3b82f6;
-    margin-bottom: 18px;
+    background-color: #2563eb;
+    margin-bottom: 16px;
 }}
 h2 {{
     color: #0f172a;
-    font-size: 14pt;
-    margin-top: 18px;
-    margin-bottom: 8px;
+    font-size: 13.5pt;
+    margin-top: 16px;
+    margin-bottom: 6px;
     font-weight: bold;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 3px;
 }}
 h3 {{
     color: #1e3a8a;
-    font-size: 12pt;
-    margin-top: 14px;
-    margin-bottom: 6px;
+    font-size: 11.5pt;
+    margin-top: 12px;
+    margin-bottom: 4px;
     font-weight: bold;
 }}
 p {{
-    margin: 0 0 10px 0;
+    margin: 0 0 8px 0;
     text-align: justify;
 }}
 .bullet {{
     margin-left: 15px;
-    margin-bottom: 6px;
+    margin-bottom: 5px;
     text-indent: -12px;
     padding-left: 12px;
+    color: #1e293b;
+}}
+.sub-bullet {{
+    margin-left: 28px;
+    margin-bottom: 4px;
+    text-indent: -10px;
+    padding-left: 10px;
+    font-size: 10.5pt;
+    color: #334155;
 }}
 .dot {{
     color: #2563eb;
-    font-size: 14pt;
+    font-size: 13pt;
     line-height: 0;
     vertical-align: middle;
     margin-right: 6px;
+}}
+.sub-dot {{
+    color: #64748b;
+    font-size: 8pt;
+    line-height: 0;
+    vertical-align: middle;
+    margin-right: 5px;
 }}
 .footer {{
     margin-top: 25px;

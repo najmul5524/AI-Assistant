@@ -163,8 +163,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"আমি আপনার দৈনন্দিন যেকোনো কাজ, ইমেইল, রিপোর্ট তৈরি, ওয়েব সার্চ ও প্ল্যানিংয়ে সাহায্য করতে পারি।\n\n"
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
-        f"• `/digest` - সারাদিনের ফরেক্স খবরের একীভূত ডাইজেস্ট (Daily Wrap-up)\n"
-        f"• `/forex_pdf` - পূর্ণাঙ্গ সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট\n"
+        f"• `/forecast` - আগামীকালের গোল্ড, মেটাল, ফিউচার্স ও ফরেক্স প্রাইস মুভমেন্ট পূর্বাভাস\n"
+        f"• `/digest` - দৈনিক একীভূত ম্যাক্রো ডাইজেস্ট ও সেন্টিমেন্ট\n"
+        f"• `/forex_pdf` - সাপ্তাহিক প্রাতিষ্ঠানিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট\n"
         f"• `/news` - ব্রেকিং ফরেক্স নিউজ ও লাইভ এআই মার্কেট এনালাইসিস\n"
         f"• `/forex` - আজকের গুরুত্বপূর্ণ ফরেক্স ক্যালেন্ডার দেখা\n"
         f"• `/forex_sync` - Google Calendar-এ নিউজ রিমাইন্ডার সিঙ্ক করা\n"
@@ -190,7 +191,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
         f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা কাজ সরাসরি মেসেজ হিসেবে লিখুন।\n"
-        f"• `/digest`: সারাদিনের সমস্ত ফরেক্স নিউজের একীভূত ম্যাক্রো ডাইজেস্ট (কারেন্সি স্ট্রেন্থ, বিজয়ী/পরাজিত পেয়ার, আগামীকালের সেশন)।\n"
+        f"• `/forecast` বা `/prediction` বা `/digest`: সারাদিনের সমস্ত নিউজ, গোল্ড (Gold), সিলভার (Silver), ফিউচার্স (S&P 500, Crude Oil) ও X.com সেন্টিমেন্ট বিশ্লেষণ করে আগামীকালের বিস্তারিত প্রাইস মুভমেন্ট পূর্বাভাস।\n"
         f"• `/forex_pdf`: সরাসরি পূর্ণাঙ্গ প্রাতিষ্ঠানিক সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট তৈরি ও ডাউনলোড।\n"
         f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)।\n"
         f"• `/forex`: আজকের High & Medium Impact ফরেক্স ক্যালেন্ডার নিউজ দেখা। (`/forex all` দিয়ে পুরো সপ্তাহেরটা দেখা যাবে)\n"
@@ -528,26 +529,55 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         await status_msg.edit_text(alert_msg)
 
+async def send_split_message(bot, chat_id: int, text: str, parse_mode=ParseMode.MARKDOWN):
+    """Safely dispatches long messages, splitting into clean sections if exceeding Telegram limit."""
+    if len(text) <= 4000:
+        try:
+            await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        except Exception:
+            await bot.send_message(chat_id=chat_id, text=text)
+        return
+
+    # Split by double newlines to keep markdown sections intact
+    parts = []
+    current_chunk = ""
+    for block in text.split("\n\n"):
+        if len(current_chunk) + len(block) + 2 < 4000:
+            current_chunk += ("\n\n" if current_chunk else "") + block
+        else:
+            if current_chunk:
+                parts.append(current_chunk)
+            current_chunk = block
+    if current_chunk:
+        parts.append(current_chunk)
+
+    for p in parts:
+        try:
+            await bot.send_message(chat_id=chat_id, text=p, parse_mode=parse_mode)
+        except Exception:
+            await bot.send_message(chat_id=chat_id, text=p)
+
 async def digest_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /digest - Generates a consolidated daily macroeconomic market wrap-up."""
+    """Handle /digest, /forecast, /prediction - Generates next-day price movement prediction & market digest."""
     user = update.effective_user
     if not is_user_allowed(user.id):
         await unauthorized_reply(update)
         return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    status_msg = await update.message.reply_text("⏳ আজকের সমস্ত ফরেক্স ইভেন্ট ও খবরের সমন্বিত এক্সিকিউটিভ ডাইজেস্ট তৈরি করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
+    status_msg = await update.message.reply_text("⏳ আজকের সমস্ত নিউজ, গোল্ড, ফরেক্স, ফিউচার্স ও X.com ট্রেডার সেন্টিমেন্ট বিশ্লেষণ করে আগামীকালের পূর্বাভাস তৈরি করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
 
     try:
         loop = asyncio.get_running_loop()
         digest_text = await loop.run_in_executor(None, forex_digest_service.generate_daily_digest)
         try:
-            await status_msg.edit_text(digest_text, parse_mode=ParseMode.MARKDOWN)
+            await status_msg.delete()
         except Exception:
-            await status_msg.edit_text(digest_text)
+            pass
+        await send_split_message(context.bot, update.effective_chat.id, digest_text, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        logger.error(f"Failed to generate digest: {e}")
-        await status_msg.edit_text(f"❌ ডাইজেস্ট তৈরিতে সমস্যা হয়েছে: {str(e)}")
+        logger.error(f"Failed to generate digest/forecast: {e}")
+        await update.message.reply_text(f"❌ ডাইজেস্ট ও পূর্বাভাস তৈরিতে সমস্যা হয়েছে: {str(e)}")
 
 async def forex_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /forex_pdf - Generates and dispatches a comprehensive weekly Forex intelligence PDF report."""
@@ -744,11 +774,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         database.add_message(user.id, "assistant", "[Forex Breaking News & Analysis displayed]")
         return
 
-    # Check for natural language digest triggers
-    if any(k in lower_text for k in ["ডাইজেস্ট", "digest", "সারসংক্ষেপ", "wrapup", "wrap up", "আজকের সারাংশ", "মার্কেট র্যাপ"]):
+    # Check for natural language digest & next-day price movement prediction triggers
+    if any(k in lower_text for k in [
+        "ডাইজেস্ট", "digest", "সারসংক্ষেপ", "wrapup", "wrap up", "আজকের সারাংশ", "মার্কেট র্যাপ",
+        "পূর্বাভাস", "forecast", "prediction", "প্রেডিকশন", "পরের দিন", "আগামীকাল", "পরবর্তী দিন"
+    ]) and any(w in lower_text for w in ["ফরেক্স", "মার্কেট", "forex", "gold", "গোল্ড", "দাম", "প্রাইস", "মুভমেন্ট", "বাজার", "future", "ফিউচার", "মেটাল", "তেল", "oil"]):
         await digest_command(update, context)
         database.add_message(user.id, "user", text)
-        database.add_message(user.id, "assistant", "[Daily Forex Digest displayed]")
+        database.add_message(user.id, "assistant", "[Daily Multi-Asset Prediction displayed]")
         return
 
     # Check for natural language forex PDF report triggers
@@ -883,17 +916,17 @@ async def scheduled_news_monitor_job(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in scheduled_news_monitor_job: {e}")
 
 async def daily_evening_digest_job(context: ContextTypes.DEFAULT_TYPE):
-    """Daily evening job at 22:00 (10:00 PM Asia/Dhaka) dispatching consolidated Daily Forex Evening Wrap-up."""
-    logger.info("Executing scheduled Daily Evening Forex Wrap-up...")
+    """Daily evening job at 22:00 (10:00 PM Asia/Dhaka) dispatching consolidated Next-Day Price Movement & Evening Wrap-up."""
+    logger.info("Executing scheduled Daily Evening Forex & Multi-Asset Prediction Wrap-up...")
     try:
         loop = asyncio.get_running_loop()
         digest_text = await loop.run_in_executor(None, forex_digest_service.generate_daily_digest)
         target_uids = ALLOWED_USER_IDS if ALLOWED_USER_IDS else []
         for uid in target_uids:
             try:
-                await context.bot.send_message(chat_id=uid, text=digest_text, parse_mode=ParseMode.MARKDOWN)
+                await send_split_message(context.bot, uid, digest_text, parse_mode=ParseMode.MARKDOWN)
             except Exception as e:
-                logger.warning(f"Could not send evening digest to {uid}: {e}")
+                logger.warning(f"Could not send evening digest/prediction to {uid}: {e}")
     except Exception as e:
         logger.error(f"Error in daily_evening_digest_job: {e}")
 
@@ -950,6 +983,8 @@ def main():
     app.add_handler(CommandHandler("forex_sync", forex_sync_command))
     app.add_handler(CommandHandler("news", news_command))
     app.add_handler(CommandHandler("digest", digest_command))
+    app.add_handler(CommandHandler("forecast", digest_command))
+    app.add_handler(CommandHandler("prediction", digest_command))
     app.add_handler(CommandHandler("forex_pdf", forex_pdf_command))
 
     # Register Text Message Handler

@@ -606,6 +606,8 @@ async def forex_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status_msg.delete()
         except Exception:
             pass
+    except Exception as e:
+        logger.error(f"Error in weekly_report_command: {e}")
         await update.message.reply_text(f"❌ ফরেক্স রিপোর্ট তৈরিতে সমস্যা হয়েছে: {str(e)}")
 
 async def forecast_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

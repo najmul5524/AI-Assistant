@@ -47,7 +47,7 @@ def create_market_range_chart(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     width = 1030
-    height = 620
+    height = 710
     img = Image.new("RGB", (width, height), color="#f8fafc")
     draw = ImageDraw.Draw(img)
 
@@ -72,6 +72,8 @@ def create_market_range_chart(
     default_assets = [
         {"name": "Gold (XAU/USD)", "bias": "BULLISH", "color": "#10b981", "s": "$2,685", "pivot": "$2,715", "r": "$2,745", "pct": 0.75},
         {"name": "Silver (XAG/USD)", "bias": "RANGE", "color": "#f59e0b", "s": "$31.40", "pivot": "$31.85", "r": "$32.60", "pct": 0.50},
+        {"name": "Bitcoin (BTC/USD)", "bias": "BULLISH", "color": "#10b981", "s": "$62,500", "pivot": "$64,200", "r": "$66,800", "pct": 0.74},
+        {"name": "Ethereum (ETH/USD)", "bias": "RANGE", "color": "#f59e0b", "s": "$2,420", "pivot": "$2,560", "r": "$2,700", "pct": 0.52},
         {"name": "Nasdaq 100 (NAS100)", "bias": "BULLISH", "color": "#10b981", "s": "19,850", "pivot": "20,100", "r": "20,350", "pct": 0.72},
         {"name": "S&P 500 Futures", "bias": "BULLISH", "color": "#10b981", "s": "5,690", "pivot": "5,740", "r": "5,785", "pct": 0.70},
         {"name": "Crude Oil (WTI)", "bias": "BEARISH", "color": "#ef4444", "s": "$68.20", "pivot": "$70.10", "r": "$72.10", "pct": 0.35},
@@ -82,7 +84,7 @@ def create_market_range_chart(
 
     assets = assets_data if assets_data else default_assets
 
-    y = 80
+    y = 75
     for a in assets:
         # Asset Name
         draw.text((25, y + 6), a["name"], fill="#0f172a", font=font_asset)
@@ -111,17 +113,17 @@ def create_market_range_chart(
 
         # Separator line
         draw.line([20, y + 45, width - 20, y + 45], fill="#f1f5f9", width=1)
-        y += 55
+        y += 54
 
-    # Currency Strength Footer
+    # Market Sentiment & Strength Footer
     draw.rounded_rectangle([15, height - 52, width - 15, height - 12], radius=8, fill="#f1f5f9")
-    draw.text((25, height - 39), "Currency Strength Index:", fill="#334155", font=font_meta)
+    draw.text((25, height - 39), "Market Sentiment Index:", fill="#334155", font=font_meta)
     strengths = [
         ("USD", "Bullish", "#10b981"),
-        ("GBP", "Strong", "#10b981"),
+        ("BTC", "Bullish", "#10b981"),
         ("EUR", "Weak", "#ef4444"),
         ("JPY", "Neutral", "#d97706"),
-        ("CAD", "Soft", "#ef4444")
+        ("Gold", "Strong", "#10b981")
     ]
     cx = 240
     for curr, status, col in strengths:

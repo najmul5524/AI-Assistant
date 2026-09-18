@@ -87,11 +87,12 @@ def generate_daily_digest(target_date: Optional[datetime.date] = None, tz_name: 
     # 2. Breaking Forex news from monitor
     recent_news = forex_news_monitor.fetch_latest_forex_news(limit=6)
 
-    # 3. Targeted live market intelligence searches (Metals, Futures, Forex, Social / X.com sentiment)
+    # 3. Targeted live market intelligence searches (Metals, Crypto, Futures, Forex, Social / X.com sentiment)
     metals_intel = search_market_intel("gold price forecast technical levels XAU USD", max_items=3)
+    crypto_intel = search_market_intel("Bitcoin BTC Ethereum ETH crypto price forecast ETF flows technical levels", max_items=3)
     futures_intel = search_market_intel("Nasdaq 100 S&P 500 futures crude oil forecast technical levels", max_items=4)
     forex_intel = search_market_intel("forex EUR USD USD JPY outlook technical levels", max_items=3)
-    sentiment_intel = search_market_intel("forex gold technical analysis sentiment x.com", max_items=3)
+    sentiment_intel = search_market_intel("forex crypto gold technical analysis sentiment x.com", max_items=3)
 
     # Build context for LLM
     event_lines = []
@@ -112,6 +113,7 @@ def generate_daily_digest(target_date: Optional[datetime.date] = None, tz_name: 
     news_context = "\n".join(news_lines) if news_lines else "No breaking headlines."
 
     metals_context = "\n".join([f"- {m}" for m in metals_intel]) if metals_intel else "Steady metal trading."
+    crypto_context = "\n".join([f"- {c}" for c in crypto_intel]) if crypto_intel else "Steady crypto markets."
     futures_context = "\n".join([f"- {f}" for f in futures_intel]) if futures_intel else "Moderate futures volatility."
     forex_search_context = "\n".join([f"- {fx}" for fx in forex_intel]) if forex_intel else "Range-bound forex."
     sentiment_context = "\n".join([f"- {s}" for s in sentiment_intel]) if sentiment_intel else "Neutral sentiment on X/socials."
@@ -131,6 +133,9 @@ Context Data:
 
 === Metals Intelligence (Gold / Silver) ===
 {metals_context}
+
+=== Crypto Intelligence (Bitcoin / Ethereum) ===
+{crypto_context}
 
 === Futures & Commodities Intelligence (Nasdaq 100 / S&P 500 / Crude Oil) ===
 {futures_context}
@@ -199,7 +204,22 @@ Strictly structure the report with the following markdown layout:
 
 ---
 
-## ৪. প্রধান ফরেক্স পেয়ার পূর্বাভাস (Forex Majors Roadmaps)
+## ৪. ক্রিপ্টোকারেন্সি পূর্বাভাস ও কী লেভেলস (Crypto Outlook: Bitcoin & Ethereum)
+
+### Bitcoin (BTC/USD)
+- **সম্ভাব্য গতিপথ ও বায়াস (Directional Bias):** বুলিশ (Bullish) / বেয়ারিশ (Bearish) / কনসোলিডেশন (Range-bound)
+- **প্রত্যাশিত রেঞ্জ ও কী লেভেল (Expected Range & Key Levels):** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
+- **ম্যাক্রো অনুঘটক ও ইটিএফ প্রবাহ (Macro Catalysts & Institutional ETF Flows):** স্পট বিটকয়েন ইটিএফ ক্যাপিটাল ফ্লো, মার্কিন ডলার/লিকুইডিটি ও ফেড রেট কাট প্রত্যাশার প্রভাব
+- **ট্রেডিং অ্যাকশন প্ল্যান (Trading Action Plan):** ব্রেকআউট ও প্রাতিষ্ঠানিক সাপোর্ট জোনে পুলব্যাক এন্ট্রি কৌশল
+
+### Ethereum (ETH/USD)
+- **সম্ভাব্য গতিপথ ও বায়াস (Directional Bias):** বুলিশ (Bullish) / বেয়ারিশ (Bearish) / রেঞ্জ (Range)
+- **প্রত্যাশিত রেঞ্জ ও কী লেভেল (Expected Range & Key Levels):** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
+- **নেটওয়ার্ক অ্যাক্টিভিটি ও ইটিএফ প্রভাব (Network Activity & Institutional Flows):** ইথার স্পট ইটিএফ, ডিফাই লিকুইডিটি এবং ইটিএইচ/বিটিসি রেশিও বিশ্লেষণ
+
+---
+
+## ৫. প্রধান ফরেক্স পেয়ার পূর্বাভাস (Forex Majors Roadmaps)
 
 ### Euro (EUR/USD)
 - **আগামীকালের রোডম্যাপ ও টেকনিক্যাল রেঞ্জ (Roadmap & Technical Range):** সাপোর্ট (... - ...) ও রেজিস্ট্যান্স (... - ...)
@@ -218,7 +238,7 @@ Strictly structure the report with the following markdown layout:
 
 ---
 
-## ৫. রিস্ক ম্যানেজমেন্ট ও ইনভ্যালিডেশন গাইড (Trading Strategy & Risk Management)
+## ৬. রিস্ক ম্যানেজমেন্ট ও ইনভ্যালিডেশন গাইড (Trading Strategy & Risk Management)
 
 ### কী ইনভ্যালিডেশন লেভেলস (Key Invalidation Levels):
 - কোন কোন টেকনিক্যাল লেভেল ভেঙে গেলে এই পূর্বাভাস বাতিল হবে তার স্পষ্ট তালিকা।
@@ -267,9 +287,11 @@ def generate_weekly_intelligence_report(filename_prefix: str = "Weekly_Forex_Rep
     # 3. Targeted Weekly Macro Search Summaries
     weekly_macro_news = search_market_intel("forex market weekly wrap up review Fed FOMC", max_items=4)
     weekly_metals_news = search_market_intel("gold Nasdaq 100 S&P 500 oil weekly market performance review", max_items=4)
+    weekly_crypto_news = search_market_intel("Bitcoin Ethereum crypto market weekly review ETF inflows", max_items=4)
 
     search_macro_summary = "\n".join([f"- {m}" for m in weekly_macro_news]) if weekly_macro_news else "Steady global trade."
     search_metals_summary = "\n".join([f"- {m}" for m in weekly_metals_news]) if weekly_metals_news else "Precious metals steady."
+    search_crypto_summary = "\n".join([f"- {c}" for c in weekly_crypto_news]) if weekly_crypto_news else "Crypto markets consolidating."
 
     prompt = f"""You are an Institutional Global Macro & Forex Portfolio Manager.
 Compile an authoritative, comprehensive Weekly Forex & Multi-Asset Intelligence Report for the trading week.
@@ -287,6 +309,9 @@ Data Sources:
 
 === Metals, Commodities & Indices (Gold/Silver, Crude Oil, Nasdaq 100, S&P 500) Review ===
 {search_metals_summary}
+
+=== Digital Assets & Cryptocurrency (Bitcoin / Ethereum) Review ===
+{search_crypto_summary}
 
 CRITICAL INSTITUTIONAL REPORT MANDATE:
 1. This is a comprehensive 4 to 5-page executive intelligence report. DO NOT shorten, summarize, or produce shallow 1-line bullet points.
@@ -359,7 +384,19 @@ Strictly structure the report with the following markdown layout and headings:
 
 ---
 
-## ৫. আগামী সপ্তাহের হাই-ইমপ্যাক্ট ক্যালেন্ডার ও রিস্ক ম্যানেজমেন্ট গাইড (Economic Calendar & Risk Management)
+## ৫. ক্রিপ্টোকারেন্সি ও ডিজিটাল অ্যাসেটস বিশ্লেষণ (Digital Assets & Crypto Outlook)
+
+### Bitcoin (BTC/USD)
+- **ম্যাক্রো ড্রাইভার ও প্রাতিষ্ঠানিক ফ্লো (Macro Drivers & Institutional ETF Inflows):** স্পট বিটকয়েন ইটিএফ ক্যাপিটাল ফ্লো, প্রাতিষ্ঠানিক বিনিয়োগকারী ও কর্পোরেট ট্রেজারি ডিমান্ড, ইউএস লিকুইডিটি ও ফেড মানিটারি পলিসির প্রভাব নিয়ে বিস্তারিত ৩-৪ লাইনের প্রাতিষ্ঠানিক বিশ্লেষণ।
+- **প্রযুক্তিগত দৃষ্টিভঙ্গি ও কী লেভেলস (Technical Outlook & Key Levels):** সাইকোলজিক্যাল কী রেজিস্ট্যান্স ও মেজর সাপোর্ট জোন, অন-চেইন মেট্রিক্স, লিকুইডেশন পুল এবং আগামী সপ্তাহের প্রাতিষ্ঠানিক টেকনিক্যাল রোডম্যাপ।
+
+### Ethereum (ETH/USD)
+- **ম্যাক্রো ড্রাইভার ও নেটওয়ার্ক লিকুইডিটি (Macro Drivers & Staking Dynamics):** ইথেরিয়াম স্পট ইটিএফ ফ্লো, ডিফাই (DeFi) টোটাল ভ্যালু লকড (TVL), গ্যাস ফি, স্টেকিং ইল্ড এবং বিটকয়েনের বিপরীতে ইথেরিয়ামের (ETH/BTC) পারফরম্যান্স বিশ্লেষণ।
+- **প্রযুক্তিগত দৃষ্টিভঙ্গি ও ট্রেডিং লেভেলস (Technical Outlook & Key Levels):** সাপোর্ট-রেজিস্ট্যান্স চ্যানেল, মোমেন্টাম সিগন্যাল ও আগামী সপ্তাহের ট্রেডিং রোডম্যাপ।
+
+---
+
+## ৬. আগামী সপ্তাহের হাই-ইমপ্যাক্ট ক্যালেন্ডার ও রিস্ক ম্যানেজমেন্ট গাইড (Economic Calendar & Risk Management)
 
 ### আসন্ন সপ্তাহের প্রধান ইভেন্টসমূহ (Key Economic Releases):
 ১. নির্দিষ্ট তারিখ ও হাই-ইমপ্যাক্ট ইভেন্ট/শীর্ষ সম্মেলন ও সম্ভাব্য মার্কেট ইমপ্যাক্ট।

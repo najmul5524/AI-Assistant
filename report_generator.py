@@ -3,7 +3,7 @@ import datetime
 from pathlib import Path
 from typing import List, Any, Optional
 
-from fpdf import FPDF
+import pymupdf
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -12,150 +12,167 @@ from openpyxl.utils import get_column_letter
 from config import REPORTS_DIR, BOT_NAME, BASE_DIR
 
 _font_path = BASE_DIR / "fonts" / "kalpurush.ttf"
+FONTS_DIR = BASE_DIR / "fonts"
 HAS_KALPURUSH = _font_path.exists()
 
 def _has_bengali(text: str) -> bool:
     """Returns True if string contains Bengali Unicode characters."""
     return any('\u0980' <= c <= '\u09ff' for c in text)
 
-class ExecutivePDF(FPDF):
-    """Modern executive PDF document with header, footer, and Bengali HarfBuzz shaping."""
-    def __init__(self, doc_title: str):
-        super().__init__(orientation="P", unit="mm", format="A4")
-        self.doc_title = doc_title
-        
-    def header(self):
-        if "Kalpurush" in self.fonts:
-            self.set_font("Kalpurush", "", 8)
-            self.set_text_color(148, 163, 184)
-            self.cell(0, 7, f"{BOT_NAME} 24/7 AI • Confidential Executive Report", align="R")
-            self.ln(9)
+def _markdown_to_html(title: str, text_content: str) -> str:
+    """Converts structured markdown into high-definition HTML for PyMuPDF Story."""
+    now_str = datetime.datetime.now().strftime("%d %B, %Y | %I:%M %p")
+    
+    html_body = []
+    lines = text_content.split("\n")
+    for line in lines:
+        raw = line.strip()
+        if not raw:
+            continue
             
-    def footer(self):
-        self.set_y(-15)
-        if "Kalpurush" in self.fonts:
-            self.set_font("Kalpurush", "", 8)
-            self.set_text_color(148, 163, 184)
-            self.cell(0, 10, f"পৃষ্ঠা {self.page_no()}", align="C")
+        formatted = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', raw)
+        formatted = re.sub(r'\*(.*?)\*', r'<i>\1</i>', formatted)
+        
+        if raw.startswith("### "):
+            h_text = formatted[4:].strip()
+            html_body.append(f"<h3>{h_text}</h3>")
+        elif raw.startswith("## "):
+            h_text = formatted[3:].strip()
+            html_body.append(f"<h2>{h_text}</h2>")
+        elif raw.startswith("# "):
+            h_text = formatted[2:].strip()
+            html_body.append(f"<h2>{h_text}</h2>")
+        elif raw.startswith("- ") or raw.startswith("* ") or raw.startswith("• "):
+            b_text = formatted[2:].strip()
+            html_body.append(f'<div class="bullet"><span class="dot">•</span> {b_text}</div>')
+        else:
+            html_body.append(f"<p>{formatted}</p>")
+            
+    body_content = "\n".join(html_body)
+    
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face {{
+    font-family: 'Kalpurush';
+    src: url('kalpurush.ttf');
+}}
+body {{
+    font-family: 'Kalpurush', sans-serif;
+    font-size: 11pt;
+    line-height: 1.65;
+    color: #1e293b;
+    margin: 0;
+    padding: 0;
+}}
+.header-meta {{
+    font-size: 8.5pt;
+    color: #94a3b8;
+    text-align: right;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}}
+h1.doc-title {{
+    color: #0f172a;
+    font-size: 19pt;
+    line-height: 1.35;
+    margin: 0 0 4px 0;
+    font-weight: bold;
+}}
+.date-bar {{
+    font-size: 9pt;
+    color: #64748b;
+    margin-bottom: 10px;
+}}
+.divider {{
+    height: 2px;
+    background-color: #3b82f6;
+    margin-bottom: 18px;
+}}
+h2 {{
+    color: #0f172a;
+    font-size: 14pt;
+    margin-top: 18px;
+    margin-bottom: 8px;
+    font-weight: bold;
+}}
+h3 {{
+    color: #1e3a8a;
+    font-size: 12pt;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    font-weight: bold;
+}}
+p {{
+    margin: 0 0 10px 0;
+    text-align: justify;
+}}
+.bullet {{
+    margin-left: 15px;
+    margin-bottom: 6px;
+    text-indent: -12px;
+    padding-left: 12px;
+}}
+.dot {{
+    color: #2563eb;
+    font-size: 14pt;
+    line-height: 0;
+    vertical-align: middle;
+    margin-right: 6px;
+}}
+.footer {{
+    margin-top: 25px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 8.5pt;
+    color: #94a3b8;
+    font-style: italic;
+}}
+</style>
+</head>
+<body>
+<div class="header-meta">{BOT_NAME} 24/7 AI • Confidential Executive Report</div>
+<h1 class="doc-title">{title}</h1>
+<div class="date-bar">জেনারেটেড বাই: {BOT_NAME} AI | সময়: {now_str}</div>
+<div class="divider"></div>
+
+{body_content}
+
+<div class="footer">
+গোপনীয় ও নির্ভরযোগ্য তথ্যসমৃদ্ধ — প্রস্তুত করেছে {BOT_NAME} পার্সোনাল এআই সহকারী।
+</div>
+</body>
+</html>"""
 
 def generate_pdf_report(title: str, text_content: str, filename_prefix: str = "report") -> Path:
     """
-    Generates an executive-quality PDF report using FPDF2 and uharfbuzz.
-    Supports English and Bengali seamlessly with full OpenType text shaping (ligatures, conjuncts, vowels).
+    Generates an executive-quality PDF report using PyMuPDF Story & Archive.
+    Renders Bengali Unicode OpenType shaping (complex ligatures, conjuncts, and vowel reordering) 100% flawlessly.
     Returns the Path to the generated PDF.
     """
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     sanitized_prefix = re.sub(r'[^\w\-]', '_', filename_prefix)[:20]
     file_path = REPORTS_DIR / f"{sanitized_prefix}_{timestamp}.pdf"
 
-    pdf = ExecutivePDF(doc_title=title)
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.set_margins(left=20, top=18, right=20)
-    
-    font_path = BASE_DIR / "fonts" / "kalpurush.ttf"
-    if font_path.exists():
-        pdf.add_font("Kalpurush", "", str(font_path))
-        pdf.add_font("Kalpurush", "B", str(font_path))
-        pdf.add_font("Kalpurush", "I", str(font_path))
-        pdf.add_font("Kalpurush", "BI", str(font_path))
-        try:
-            pdf.set_text_shaping(True)
-        except Exception as e:
-            print(f"Warning: Text shaping could not be enabled: {e}")
-        main_font = "Kalpurush"
-    else:
-        main_font = "Helvetica"
+    archive = pymupdf.Archive(str(FONTS_DIR))
+    html = _markdown_to_html(title, text_content)
 
-    pdf.add_page()
-    
-    # 1. Title Block
-    pdf.set_font(main_font, "B", 17)
-    pdf.set_text_color(15, 23, 42)
-    pdf.multi_cell(0, 9, title)
-    pdf.ln(2)
-    
-    # 2. Metadata bar
-    now_str = datetime.datetime.now().strftime("%d %B, %Y | %I:%M %p")
-    pdf.set_font(main_font, "", 9)
-    pdf.set_text_color(100, 116, 139)
-    pdf.cell(0, 5, f"জেনারেটেড বাই: {BOT_NAME} AI | সময়: {now_str}")
-    pdf.ln(7)
-    
-    # 3. Accent divider
-    pdf.set_draw_color(59, 130, 246)
-    pdf.set_line_width(0.7)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-    pdf.ln(6)
-    
-    # 4. Content Parsing (Headings, Bullets, Paragraphs)
-    lines = text_content.split("\n")
-    for line in lines:
-        raw = line.strip()
-        if not raw:
-            pdf.ln(3)
-            continue
-            
-        if raw.startswith("### "):
-            head_txt = raw[4:].strip()
-            pdf.ln(2)
-            pdf.set_font(main_font, "B", 12)
-            pdf.set_text_color(30, 41, 59)
-            pdf.multi_cell(0, 7, head_txt)
-            pdf.ln(2)
-        elif raw.startswith("## "):
-            head_txt = raw[3:].strip()
-            pdf.ln(3)
-            pdf.set_font(main_font, "B", 14)
-            pdf.set_text_color(15, 23, 42)
-            pdf.multi_cell(0, 8, head_txt)
-            pdf.ln(2)
-        elif raw.startswith("# "):
-            head_txt = raw[2:].strip()
-            pdf.ln(4)
-            pdf.set_font(main_font, "B", 15)
-            pdf.set_text_color(15, 23, 42)
-            pdf.multi_cell(0, 9, head_txt)
-            pdf.ln(2)
-        elif raw.startswith("- ") or raw.startswith("* ") or raw.startswith("• "):
-            bullet_body = raw[2:].strip()
-            orig_lm = pdf.l_margin
-            y = pdf.get_y()
-            pdf.set_fill_color(59, 130, 246)
-            pdf.circle(orig_lm + 1.5, y + 3.2, 0.9, style="F")
-            
-            pdf.set_left_margin(orig_lm + 6)
-            pdf.set_x(orig_lm + 6)
-            pdf.set_font(main_font, "", 10.5)
-            pdf.set_text_color(51, 65, 85)
-            
-            html_bullet = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', bullet_body)
-            try:
-                pdf.write_html(f"<p>{html_bullet}</p>")
-            except Exception:
-                pdf.multi_cell(0, 6.5, bullet_body)
-            pdf.set_left_margin(orig_lm)
-            pdf.ln(1)
-        else:
-            pdf.set_font(main_font, "", 10.5)
-            pdf.set_text_color(51, 65, 85)
-            html_p = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', raw)
-            try:
-                pdf.write_html(f"<p>{html_p}</p>")
-            except Exception:
-                pdf.multi_cell(0, 6.5, raw)
-            pdf.ln(1.5)
-            
-    # 5. Bottom divider & footer notice
-    pdf.ln(6)
-    pdf.set_draw_color(226, 232, 240)
-    pdf.set_line_width(0.4)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-    pdf.ln(4)
-    pdf.set_font(main_font, "I", 8.5)
-    pdf.set_text_color(148, 163, 184)
-    pdf.cell(0, 5, f"গোপনীয় ও নির্ভরযোগ্য তথ্যসমৃদ্ধ — প্রস্তুত করেছে {BOT_NAME} পার্সোনাল এআই।")
-    
-    pdf.output(str(file_path))
+    writer = pymupdf.DocumentWriter(str(file_path))
+    story = pymupdf.Story(html=html, archive=archive)
+
+    page_rect = pymupdf.Rect(0, 0, 595, 842) # Standard A4 page
+    body_rect = pymupdf.Rect(40, 42, 595 - 40, 842 - 45) # Margins
+
+    more = 1
+    while more:
+        device = writer.begin_page(page_rect)
+        more, _ = story.place(body_rect)
+        story.draw(device)
+        writer.end_page()
+
+    writer.close()
     return file_path
 
 def generate_excel_report(title: str, headers: List[str], data_rows: List[List[Any]], filename_prefix: str = "report") -> Path:

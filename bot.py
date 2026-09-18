@@ -35,6 +35,7 @@ from config import (
     FOREX_CURRENCIES,
     FOREX_REMINDER_MINUTES,
     FOREX_DAILY_SYNC_TIME,
+    FOREX_NEWS_CHECK_INTERVAL,
 )
 import database
 import tools
@@ -848,9 +849,9 @@ def main():
         app.job_queue.run_repeating(check_scheduled_reminders, interval=15, first=5)
         print("⏰ Reminder scheduler activated (running every 15s).")
 
-        # Register 24/7 Forex Factory Breaking News Monitor (every 5 minutes / 300s)
-        app.job_queue.run_repeating(scheduled_news_monitor_job, interval=300, first=20)
-        print("📡 24/7 Forex News Monitor activated (checking every 5 minutes).")
+        # Register 24/7 Forex Factory Breaking News Monitor (runs every FOREX_NEWS_CHECK_INTERVAL seconds)
+        app.job_queue.run_repeating(scheduled_news_monitor_job, interval=FOREX_NEWS_CHECK_INTERVAL, first=15)
+        print(f"📡 24/7 Forex News Monitor activated (checking every {FOREX_NEWS_CHECK_INTERVAL}s / {FOREX_NEWS_CHECK_INTERVAL // 60}m).")
 
         # Schedule daily Forex Sync & Morning Briefing
         try:

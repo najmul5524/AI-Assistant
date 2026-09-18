@@ -35,10 +35,39 @@ from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        import json, sys
+        diag = {
+            "bot": BOT_NAME,
+            "version": "v1.6-harfbuzz-check",
+            "python_version": sys.version,
+            "has_kalpurush": (BASE_DIR / "fonts" / "kalpurush.ttf").exists(),
+            "google_script_configured": bool(GOOGLE_SCRIPT_URL),
+            "resend_key_configured": bool(RESEND_API_KEY)
+        }
+        try:
+            import uharfbuzz
+            diag["uharfbuzz"] = getattr(uharfbuzz, "__version__", "installed")
+        except Exception as e:
+            diag["uharfbuzz_error"] = str(e)
+            
+        try:
+            import fpdf
+            from fpdf import FPDF
+            pdf = FPDF()
+            font_file = BASE_DIR / "fonts" / "kalpurush.ttf"
+            if font_file.exists():
+                pdf.add_font("Kalpurush", "", str(font_file))
+                pdf.set_text_shaping(True)
+                diag["shaping_test"] = "SUCCESS"
+            else:
+                diag["shaping_test"] = "FONT_NOT_FOUND"
+        except Exception as e:
+            diag["shaping_error"] = str(e)
+
         self.send_response(200)
-        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.send_header("Content-type", "application/json; charset=utf-8")
         self.end_headers()
-        self.wfile.write(f"{BOT_NAME} 24/7 Assistant is running healthy! (v1.4-fixed-script)".encode("utf-8"))
+        self.wfile.write(json.dumps(diag, indent=2).encode("utf-8"))
 
     def log_message(self, format, *args):
         pass # Suppress access logs to keep console clean

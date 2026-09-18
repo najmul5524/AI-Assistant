@@ -166,6 +166,8 @@ def send_email(
         success, res = _send_via_resend(to_email, subject, body, attachment_path)
         if success:
             return True, res
+        if "Resend Free Tier" in res or "testing emails" in res or "domain" in res.lower():
+            return False, res
         logger.warning(f"Resend dispatch failed: {res}. Falling back to SMTP...")
 
     # 3. Direct SMTP Fallback (for local machines or unblocked hosts)

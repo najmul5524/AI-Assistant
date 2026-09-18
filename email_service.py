@@ -66,8 +66,16 @@ def _send_via_resend(
         logger.info(f"Resend email dispatched successfully: {email_resp}")
         return True, f"✅ সফলভাবে ইমেইল পাঠানো হয়েছে (via Resend API):\n📧 প্রাপক: `{to_email}`\n📌 বিষয়: *{subject}*"
     except Exception as e:
-        logger.error(f"Resend API error: {e}")
-        return False, f"❌ Resend API ত্রুটি: {str(e)}"
+        err_msg = str(e)
+        logger.error(f"Resend API error: {err_msg}")
+        if "testing emails" in err_msg.lower() or "verify a domain" in err_msg.lower():
+            return (
+                False,
+                f"⚠️ **Resend Free Tier সীমাবদ্ধতা:**\n"
+                f"Resend-এর ফ্রি প্ল্যানে নিজস্ব কাস্টম ডোমেন ছাড়া শুধুমাত্র আপনার নিজের রেজিস্টার্ড ইমেইল `{SMTP_EMAIL or 'najmul.djd@gmail.com'}` এ ইমেইল পাঠানো যায়।\n\n"
+                f"👉 আপনি যদি নিজের ইমেইলে (`najmul.djd@gmail.com`) রিপোর্ট পাঠাতে চান, তবে তা সাথে সাথেই যাবে।"
+            )
+        return False, f"❌ Resend API ত্রুটি: {err_msg}"
 
 def send_email(
     to_email: str,

@@ -346,22 +346,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
+    # Extract any email addresses in the user's message
+    email_pattern = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
+    found_emails = re.findall(email_pattern, text)
+    target_email = found_emails[0] if found_emails else None
+
     # Check for report generation triggers
-    report_keywords = ["রিপোর্ট তৈরি কর", "রিপোর্ট বানাও", "রিপোর্ট দাও", "পিডিএফ দাও", "pdf বানাও", "pdf তৈরি কর", "generate report", "create report", "make a report"]
-    if any(k in text.lower() for k in report_keywords):
+    report_keywords = [
+        "রিপোর্ট", "report", "পিডিএফ", "pdf", "ডকুমেন্ট", "document",
+        "তৈরি কর", "বানাও", "generate", "create"
+    ]
+    # If the user mentions report/pdf keywords OR specifically asks to email a report
+    is_report_request = any(k in text.lower() for k in ["রিপোর্ট", "report", "পিডিএফ", "pdf"]) and any(k in text.lower() for k in ["তৈরি", "বানাও", "দাও", "কর", "generate", "create", "make", "send", "মেইল", "ইমেইল"])
+
+    # If it's a report request (with or without email)
+    if is_report_request:
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_DOCUMENT)
-        status_msg = await update.message.reply_text("⏳ আপনার অনুরোধ অনুযায়ী একটি প্রফেশনাল PDF রিপোর্ট প্রস্তুত করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
+        status_msg = await update.message.reply_text("⏳ আপনার অনুরোধ অনুযায়ী তথ্য সংগ্রহ ও প্রফেশনাল PDF রিপোর্ট তৈরি করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
 
+        # 1. Enrich context with web search if topic relates to current events or financial indexes
+        search_data = None
+        if any(w in text.lower() for w in ["বর্তমান", "current", "latest", "status", "খবর", "দাম", "s&p", "stock", "market", "আজকের"]):
+            try:
+                search_data = tools.perform_web_search(text, max_results=3)
+            except Exception as e:
+                logger.warning(f"Web search for report failed: {e}")
+
+        # 2. Generate comprehensive executive report content via LLM
         prompt = (
-            f"Generate an executive, well-structured, comprehensive report based on this request: '{text}'.\n"
-            f"Include an Executive Summary, Key Highlights, Detailed Findings, and Actionable Recommendations.\n"
-            f"Use markdown headers (##, ###) and clean bullet points (- )."
+            f"You are generating a formal executive report requested by the user: '{text}'.\n"
+            f"Provide a thorough, high-quality, professional report with:\n"
+            f"1. Executive Summary\n"
+            f"2. Current Market / Topic Overview & Key Highlights\n"
+            f"3. In-Depth Analysis & Data Points\n"
+            f"4. Actionable Recommendations & Future Outlook\n\n"
+            f"Format using clear markdown headers (##, ###) and clean bullet points (- ).\n"
+            f"Language: Respond in natural, professional Bengali if the request is Bengali, English if English."
         )
-        ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt)
+        ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt, context_data=search_data)
 
+        # Clean topic title for PDF header
+        report_title = text[:60].replace("\n", " ")
         try:
-            pdf_path = report_generator.generate_pdf_report(title="Executive Summary Report", text_content=ai_report_text, filename_prefix="ai_report")
-            caption = f"📄 আপনার অনুরোধকৃত PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
+            pdf_path = report_generator.generate_pdf_report(
+                title=f"Report: {report_title}",
+                text_content=ai_report_text,
+                filename_prefix="Executive_Report"
+            )
+            caption = f"📄 {report_title}\n\n✅ আপনার PDF রিপোর্ট তৈরি সম্পন্ন!\n🤖 এআই ইঞ্জিন: {provider_used}"
             with open(pdf_path, "rb") as doc_file:
                 await context.bot.send_document(
                     chat_id=update.effective_chat.id,
@@ -369,15 +401,79 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     filename=pdf_path.name,
                     caption=caption
                 )
+
+            # If user also requested to email the report
+            if target_email:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+                email_subject = f"Executive Report: {report_title}"
+                email_body = (
+                    f"Hello,\n\n"
+                    f"Please find attached your requested report regarding: '{report_title}'.\n\n"
+                    f"Summary Highlights:\n"
+                    f"{ai_report_text[:400]}...\n\n"
+                    f"Best regards,\n"
+                    f"{BOT_NAME} Personal AI Assistant"
+                )
+                email_ok, email_res = email_service.send_email(
+                    to_email=target_email,
+                    subject=email_subject,
+                    body=email_body,
+                    attachment_path=pdf_path
+                )
+                await update.message.reply_text(email_res, parse_mode=ParseMode.MARKDOWN)
+
             try:
                 await status_msg.delete()
             except Exception:
                 pass
+
             database.add_message(user.id, "user", text)
-            database.add_message(user.id, "assistant", f"[PDF Report Dispatched: {pdf_path.name}]", model_used=provider_used)
+            record_msg = f"[PDF Report Dispatched: {pdf_path.name}]"
+            if target_email:
+                record_msg += f" [Emailed to {target_email}]"
+            database.add_message(user.id, "assistant", record_msg, model_used=provider_used)
             return
+
         except Exception as e:
-            logger.error(f"Conversational report generation failed: {e}")
+            logger.error(f"Report generation/dispatch failed: {e}")
+            await update.message.reply_text(f"❌ রিপোর্ট তৈরিতে সমস্যা হয়েছে: {str(e)}")
+
+    # Check for standalone email trigger (e.g. "email najmul@test.com subject | body" in chat)
+    if target_email and any(w in text.lower() for w in ["মেইল কর", "মেইল পাঠিয়ে দাও", "ইমেইল কর", "send email", "email"]):
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        # Ask LLM to draft suitable subject and clean body based on user prompt
+        draft_prompt = (
+            f"The user wants to send an email to '{target_email}'.\n"
+            f"User command: '{text}'\n\n"
+            f"Extract or compose a clear Subject and Email Body.\n"
+            f"Output format:\n"
+            f"SUBJECT: <concise subject>\n"
+            f"BODY:\n<professional body text>"
+        )
+        draft_text, provider_used, _ = llm_manager.generate_response(prompt=draft_prompt)
+        
+        subject = "Message from Assistant"
+        body = text
+        if "SUBJECT:" in draft_text and "BODY:" in draft_text:
+            try:
+                subj_part = draft_text.split("BODY:")[0].replace("SUBJECT:", "").strip()
+                body_part = draft_text.split("BODY:")[1].strip()
+                if subj_part:
+                    subject = subj_part
+                if body_part:
+                    body = body_part
+            except Exception:
+                pass
+
+        email_ok, email_res = email_service.send_email(
+            to_email=target_email,
+            subject=subject,
+            body=body
+        )
+        await update.message.reply_text(email_res, parse_mode=ParseMode.MARKDOWN)
+        database.add_message(user.id, "user", text)
+        database.add_message(user.id, "assistant", f"[Email sent to {target_email}: {subject}]", model_used=provider_used)
+        return
 
     # Check for web search triggers
     context_data = None

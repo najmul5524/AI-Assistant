@@ -13,14 +13,60 @@ from config import (
     SMTP_SERVER,
     SMTP_PORT,
     RESEND_API_KEY,
+    GOOGLE_SCRIPT_URL,
     BOT_NAME
 )
 
 logger = logging.getLogger(__name__)
 
 def is_email_configured() -> bool:
-    """Check if either Resend API or SMTP credentials are provided."""
-    return bool(RESEND_API_KEY or (SMTP_EMAIL and SMTP_PASSWORD))
+    """Check if Google Script URL, Resend API, or SMTP credentials are provided."""
+    return bool(GOOGLE_SCRIPT_URL or RESEND_API_KEY or (SMTP_EMAIL and SMTP_PASSWORD))
+
+def _send_via_google_script(
+    to_email: str,
+    subject: str,
+    body: str,
+    attachment_path: Optional[Path] = None
+) -> Tuple[bool, str]:
+    """
+    Sends email directly through your Gmail account using Google Apps Script Web App (HTTPS).
+    - 100% Free (100 emails/day from your own Gmail)
+    - Can send to ANY recipient (no domain verification required)
+    - Works on Render Free Tier without any port blockades (HTTPS Port 443)
+    """
+    import base64
+    import requests
+
+    payload = {
+        "recipient": to_email.strip(),
+        "subject": subject.strip(),
+        "body": body
+    }
+
+    if attachment_path and Path(attachment_path).is_file():
+        file_obj = Path(attachment_path)
+        with open(file_obj, "rb") as f:
+            b64_data = base64.b64encode(f.read()).decode("utf-8")
+        payload["attachment"] = {
+            "name": file_obj.name,
+            "type": "application/pdf" if file_obj.suffix.lower() == ".pdf" else "application/octet-stream",
+            "base64": b64_data
+        }
+
+    try:
+        response = requests.post(GOOGLE_SCRIPT_URL, json=payload, timeout=25)
+        if response.status_code == 200:
+            res_json = response.json()
+            if res_json.get("status") == "success":
+                return True, f"✅ সফলভাবে আপনার জিমেইল থেকে ইমেইল পাঠানো হয়েছে:\n📧 প্রাপক: `{to_email}`\n📌 বিষয়: *{subject}*"
+            else:
+                return False, f"❌ Google Script ত্রুটি: {res_json.get('message', 'Unknown error')}"
+        else:
+            return False, f"❌ Google Script HTTP {response.status_code}: {response.text}"
+    except Exception as e:
+        logger.error(f"Failed to send via Google Script: {e}")
+        return False, f"❌ Google Script সংযোগ ব্যর্থ: {str(e)}"
 
 def _send_via_resend(
     to_email: str,
@@ -84,7 +130,8 @@ def send_email(
     attachment_path: Optional[Path] = None
 ) -> Tuple[bool, str]:
     """
-    Sends an email via SMTP (Gmail App Password).
+    Dispatches email via Google Script Web App (Priority 1),
+    Resend HTTPS API (Priority 2), or Direct SMTP (Priority 3).
     Supports optional file attachments (PDF, Excel, etc.).
     Returns: (success_bool, message_str)
     """
@@ -92,18 +139,21 @@ def send_email(
         return (
             False,
             "⚠️ ইমেইল সার্ভিস এখনো কনফিগার করা হয়নি!\n\n"
-            "ইমেইল পাঠাতে আপনার `.env` ফাইলে `SMTP_EMAIL` (আপনার জিমেইল) এবং `SMTP_PASSWORD` "
-            "(Google App Password - https://myaccount.google.com/apppasswords থেকে প্রাপ্ত ১৬ অক্ষরের পাসওয়ার্ড) যোগ করুন।"
+            "ইমেইল পাঠাতে Render Environment-এ `GOOGLE_SCRIPT_URL` অথবা `RESEND_API_KEY` যোগ করুন।"
         )
 
     if not to_email or "@" not in to_email:
         return False, "❌ প্রাপকের ইমেইল এড্রেসটি সঠিক নয়।"
 
-    # 1. Primary Cloud-Safe Dispatcher: Resend HTTPS API (never blocked by Render)
+    # 1. Highest Priority Cloud Dispatcher: Google Apps Script Web App (Sends directly from your Gmail to ANY recipient)
+    if GOOGLE_SCRIPT_URL:
+        return _send_via_google_script(to_email, subject, body, attachment_path)
+
+    # 2. Resend HTTPS API (Sends to verified recipient/domain)
     if RESEND_API_KEY:
         return _send_via_resend(to_email, subject, body, attachment_path)
 
-    # 2. Fallback to Direct SMTP (for local machines or hosts with open SMTP ports)
+    # 3. Direct SMTP Fallback (for local machines or unblocked hosts)
     try:
         msg = MIMEMultipart()
         msg["From"] = f"{BOT_NAME} Assistant <{SMTP_EMAIL}>"

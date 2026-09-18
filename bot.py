@@ -277,9 +277,9 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Include:\n"
         f"1. Executive Summary\n"
         f"2. Key Insights & Current Landscape\n"
-        f"3. In-Depth Analysis\n"
-        f"4. Actionable Recommendations & Future Outlook\n\n"
-        f"Write in natural, authoritative style (Bengali if topic is Bengali, English if English).\n"
+        f"3. In-Depth Analysis & Data Points\n"
+        f"4. Actionable Recommendations & Strategic Outlook\n\n"
+        f"IMPORTANT: Write the formal PDF document text in clean, professional, publication-grade English so that all formatting, headers, tables, and typography render with 100% perfection without font encoding glitches.\n"
         f"Use markdown headings (##, ###) and clean bullet points (- )."
     )
 
@@ -383,9 +383,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"1. Executive Summary\n"
             f"2. Current Market / Topic Overview & Key Highlights\n"
             f"3. In-Depth Analysis & Data Points\n"
-            f"4. Actionable Recommendations & Future Outlook\n\n"
-            f"Format using clear markdown headers (##, ###) and clean bullet points (- ).\n"
-            f"Language: Respond in natural, professional Bengali if the request is Bengali, English if English."
+            f"4. Actionable Recommendations & Future Strategic Outlook\n\n"
+            f"IMPORTANT: Write the formal PDF document text in clean, professional, publication-grade English so that all formatting, headers, tables, and typography render with 100% crisp perfection without font encoding glitches.\n"
+            f"Format using clear markdown headers (##, ###) and clean bullet points (- )."
         )
         ai_report_text, provider_used, notice = llm_manager.generate_response(prompt=prompt, context_data=search_data)
 

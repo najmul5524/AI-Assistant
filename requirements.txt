@@ -14,3 +14,4 @@ uharfbuzz>=0.40.0
 pymupdf>=1.24.0
 google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.2.0
+gradio>=4.0.0

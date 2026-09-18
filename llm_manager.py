@@ -142,6 +142,10 @@ class MultiTierLLMManager:
                     return response.text
             except Exception as e:
                 last_err = e
+                err_str = str(e)
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "Quota exceeded" in err_str:
+                    logger.warning(f"Gemini quota reached for current key. Instantly switching to next AI tier...")
+                    break
                 logger.warning(f"Gemini model {model_name} failed: {e}. Trying next fallback model...")
 
         if last_err:

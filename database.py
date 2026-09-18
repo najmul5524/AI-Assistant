@@ -48,6 +48,17 @@ def init_db():
                 PRIMARY KEY (user_id, pref_key)
             )
         """)
+
+        # Processed Forex breaking news table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS seen_news (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                link TEXT,
+                published_at TEXT,
+                analyzed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
         conn.commit()
 
@@ -126,6 +137,23 @@ def get_user_reminders(user_id: int, status: str = 'pending') -> List[Dict[str, 
         """, (user_id, status))
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+def is_news_seen(news_id: str) -> bool:
+    """Check if a news article has already been analyzed and dispatched."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM seen_news WHERE id = ?", (news_id,))
+        return cursor.fetchone() is not None
+
+def mark_news_as_seen(news_id: str, title: str, link: str = "", published_at: str = ""):
+    """Mark a news article as analyzed in the database."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO seen_news (id, title, link, published_at)
+            VALUES (?, ?, ?, ?)
+        """, (news_id, title, link, published_at))
+        conn.commit()
 
 # Initialize tables on import
 init_db()

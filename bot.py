@@ -42,6 +42,7 @@ import report_generator
 import email_service
 import forex_service
 import google_calendar_service
+import forex_news_monitor
 from llm_manager import MultiTierLLMManager
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -160,7 +161,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"আমি আপনার দৈনন্দিন যেকোনো কাজ, ইমেইল, রিপোর্ট তৈরি, ওয়েব সার্চ ও প্ল্যানিংয়ে সাহায্য করতে পারি।\n\n"
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
-        f"• `/forex` - আজকের গুরুত্বপূর্ণ ফরেক্স নিউজ দেখা\n"
+        f"• `/news` - ব্রেকিং ফরেক্স নিউজ ও লাইভ এআই মার্কেট এনালাইসিস\n"
+        f"• `/forex` - আজকের গুরুত্বপূর্ণ ফরেক্স ক্যালেন্ডার দেখা\n"
         f"• `/forex_sync` - Google Calendar-এ নিউজ রিমাইন্ডার সিঙ্ক করা\n"
         f"• `/report <বিষয়>` - সরাসরি প্রফেশনাল PDF রিপোর্ট তৈরি\n"
         f"• `/email <প্রাপক> <বিষয়> | <বার্তা>` - আসল ইমেইল পাঠানো\n"
@@ -184,6 +186,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
         f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা কাজ সরাসরি মেসেজ হিসেবে লিখুন।\n"
+        f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)।\n"
         f"• `/forex`: আজকের High & Medium Impact ফরেক্স ক্যালেন্ডার নিউজ দেখা। (`/forex all` দিয়ে পুরো সপ্তাহেরটা দেখা যাবে)\n"
         f"• `/forex_sync`: আজকের ফরেক্স নিউজ Google Calendar-এ রিমাইন্ডার অ্যালার্টসহ স্বয়ংক্রিয়ভাবে সিঙ্ক করা।\n"
         f"• `/report <বিষয়>`: যেমন `/report এআই ও ভবিষ্যৎ চাকরি বাজার` (পিডিএফ তৈরি হবে)\n"
@@ -494,6 +497,31 @@ async def forex_sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception:
         await status_msg.edit_text(reply_text)
 
+async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /news - Fetches latest Forex Factory breaking news & live AI impact analysis."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    status_msg = await update.message.reply_text("⏳ Forex Factory থেকে সর্বশেষ ব্রেকিং নিউজ সংগ্রহ ও এআই এনালাইসিস করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
+
+    articles = forex_news_monitor.fetch_latest_forex_news(limit=3)
+    if not articles:
+        await status_msg.edit_text("❌ এই মুহূর্তে কোনো নতুন ফরেক্স নিউজ পাওয়া যায়নি।")
+        return
+
+    latest = articles[0]
+    # Run analysis
+    analysis = forex_news_monitor.analyze_forex_news_with_ai(latest["title"], latest["description"])
+    alert_msg = forex_news_monitor.format_news_telegram_alert(latest, analysis)
+
+    try:
+        await status_msg.edit_text(alert_msg, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await status_msg.edit_text(alert_msg)
+
 # ----------------- Message Handler ----------------- #
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -650,6 +678,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         database.add_message(user.id, "assistant", f"[Email sent to {target_email}: {subject}]", model_used=provider_used)
         return
 
+    # Check for natural language breaking news & analysis triggers
+    lower_text = text.lower()
+    if any(k in lower_text for k in ["ব্রেকিং নিউজ", "breaking news", "news analysis", "নিউজ এনালাইসিস", "মার্কেট নিউজ", "ফরেক্স নিউজ এনালাইসিস", "লেটেস্ট নিউজ"]):
+        await news_command(update, context)
+        database.add_message(user.id, "user", text)
+        database.add_message(user.id, "assistant", "[Forex Breaking News & Analysis displayed]")
+        return
+
     # Check for natural language Forex calendar triggers
     lower_text = text.lower()
     forex_keywords = ["forex", "ফরেক্স", "forexfactory", "forex factory", "economic calendar", "ইকোনমিক ক্যালেন্ডার"]
@@ -764,6 +800,16 @@ async def daily_forex_sync_job(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in daily_forex_sync_job: {e}")
 
+async def scheduled_news_monitor_job(context: ContextTypes.DEFAULT_TYPE):
+    """Background worker running every 5 minutes to fetch breaking Forex news, analyze with AI, and alert user."""
+    try:
+        loop = asyncio.get_running_loop()
+        processed = await loop.run_in_executor(None, forex_news_monitor.check_and_alert_new_stories, context)
+        if processed > 0:
+            logger.info(f"Forex News Monitor: Dispatched {processed} breaking news alerts.")
+    except Exception as e:
+        logger.error(f"Error in scheduled_news_monitor_job: {e}")
+
 # ----------------- Main Launcher ----------------- #
 
 def main():
@@ -792,6 +838,7 @@ def main():
     app.add_handler(CommandHandler("email", email_command))
     app.add_handler(CommandHandler("forex", forex_command))
     app.add_handler(CommandHandler("forex_sync", forex_sync_command))
+    app.add_handler(CommandHandler("news", news_command))
 
     # Register Text Message Handler
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
@@ -800,6 +847,10 @@ def main():
     if app.job_queue:
         app.job_queue.run_repeating(check_scheduled_reminders, interval=15, first=5)
         print("⏰ Reminder scheduler activated (running every 15s).")
+
+        # Register 24/7 Forex Factory Breaking News Monitor (every 5 minutes / 300s)
+        app.job_queue.run_repeating(scheduled_news_monitor_job, interval=300, first=20)
+        print("📡 24/7 Forex News Monitor activated (checking every 5 minutes).")
 
         # Schedule daily Forex Sync & Morning Briefing
         try:

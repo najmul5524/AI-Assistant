@@ -19,6 +19,21 @@ def _has_bengali(text: str) -> bool:
     """Returns True if string contains Bengali Unicode characters."""
     return any('\u0980' <= c <= '\u09ff' for c in text)
 
+def _clean_text_for_kalpurush(text: str) -> str:
+    """Replaces non-breaking hyphens, non-breaking spaces, and soft hyphens with standard ASCII chars."""
+    if not text:
+        return ""
+    # Normalize special hyphens/dashes that are missing from Kalpurush font
+    for h in ['\u2010', '\u2011', '\u2012', '\u2015', '\ufe63', '\uff0d']:
+        text = text.replace(h, '-')
+    text = text.replace('\u00ad', '')  # soft hyphen
+
+    # Normalize special spaces
+    for sp in ['\u00a0', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004', '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200a', '\u202f', '\u205f', '\u3000']:
+        text = text.replace(sp, ' ')
+
+    return text
+
 def _markdown_to_html(title: str, text_content: str) -> str:
     """Converts structured markdown into high-definition HTML for PyMuPDF Story."""
     try:
@@ -28,8 +43,11 @@ def _markdown_to_html(title: str, text_content: str) -> str:
         now_dt = datetime.datetime.now()
     now_str = now_dt.strftime("%d %B, %Y | %I:%M %p")
     
+    title = _clean_text_for_kalpurush(title)
+    cleaned_content = _clean_text_for_kalpurush(text_content)
+    
     html_body = []
-    lines = text_content.split("\n")
+    lines = cleaned_content.split("\n")
     for line in lines:
         raw = line.strip()
         if not raw:

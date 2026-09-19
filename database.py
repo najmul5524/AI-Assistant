@@ -165,5 +165,23 @@ def get_recent_seen_news(limit: int = 30) -> List[Dict[str, Any]]:
         """, (limit,))
         return [dict(row) for row in cursor.fetchall()]
 
+def get_user_preference(user_id: int, key: str, default: str = "") -> str:
+    """Get a user preference value."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT pref_value FROM preferences WHERE user_id = ? AND pref_key = ?", (user_id, key))
+        row = cursor.fetchone()
+        return row["pref_value"] if row else default
+
+def set_user_preference(user_id: int, key: str, value: str):
+    """Set or update a user preference."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO preferences (user_id, pref_key, pref_value)
+            VALUES (?, ?, ?)
+        """, (user_id, key, value))
+        conn.commit()
+
 # Initialize tables on import
 init_db()

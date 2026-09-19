@@ -685,6 +685,77 @@ async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in ta_command: {e}")
         await update.message.reply_text(f"❌ টেকনিক্যাল এনালাইসিস তৈরিতে সমস্যা হয়েছে: {str(e)}")
 
+async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /voice - Configure Text-to-Speech voice reply preferences."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    arg = context.args[0].lower() if context.args else ""
+    current_status = database.get_user_preference(user.id, "voice_reply", "false") == "true"
+    current_voice = database.get_user_preference(user.id, "voice_name", "bn-BD-PradeepNeural")
+
+    if arg == "on":
+        database.set_user_preference(user.id, "voice_reply", "true")
+        await update.message.reply_text(
+            "🎙️ *ভয়েস রিপ্লাই সক্রিয় করা হয়েছে!*\n\nএখন থেকে আপনার প্রতিটি বার্তার সাথে স্বয়ংক্রিয়ভাবে অডিও ভয়েস নোট পাঠানো হবে।\n(বন্ধ করতে `/voice off` লিখুন)",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    elif arg == "off":
+        database.set_user_preference(user.id, "voice_reply", "false")
+        await update.message.reply_text(
+            "🔇 *সার্বক্ষণিক ভয়েস রিপ্লাই বন্ধ করা হয়েছে।*\n\nতবে আপনি যখনই টেলিগ্রামে মুখে ভয়েস মেসেজ পাঠাবেন, তখন স্বয়ংক্রিয়ভাবে ভয়েসে উত্তর আসবে।",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    elif arg in ["female", "মহিলা", "nabanita"]:
+        database.set_user_preference(user.id, "voice_name", "bn-BD-NabanitaNeural")
+        await update.message.reply_text(
+            "👩 *ভয়েস পরিবর্তন সফল!*\nকণ্ঠ: **নবনিতা (Nabanita Neural - Female)**",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    elif arg in ["male", "পুরুষ", "pradeep"]:
+        database.set_user_preference(user.id, "voice_name", "bn-BD-PradeepNeural")
+        await update.message.reply_text(
+            "👨 *ভয়েস পরিবর্তন সফল!*\nকণ্ঠ: **প্রদীপ (Pradeep Neural - Male)**",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        status_str = "চালু (ON) 🟢" if current_status else "বন্ধ (OFF) ⚪ (শুধু ভয়েস পাঠালে রিপ্লাই আসবে)"
+        voice_label = "নবনিতা (Female)" if "Nabanita" in current_voice else "প্রদীপ (Male)"
+        msg = (
+            f"🎙️ *ভয়েস রিপ্লাই সেটিংস*\n\n"
+            f"• বর্তমান অবস্থা: *{status_str}*\n"
+            f"• বর্তমান কণ্ঠ: *{voice_label}*\n\n"
+            f"📌 *ব্যবহারের নিয়ম:*\n"
+            f"• `/voice on` — সব মেসেজের সাথে অডিও ভয়েস রিপ্লাই চালু\n"
+            f"• `/voice off` — সার্বক্ষণিক ভয়েস রিপ্লাই বন্ধ\n"
+            f"• `/voice female` — নারী কণ্ঠে পরিবর্তন (নবনিতা)\n"
+            f"• `/voice male` — পুরুষ কণ্ঠে পরিবর্তন (প্রদীপ)"
+        )
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+async def send_voice_reply_if_needed(bot, chat_id: int, user_id: int, reply_text: str, is_voice_query: bool = False):
+    """Generates natural neural audio speech of the reply and sends as a voice message if appropriate."""
+    voice_pref = database.get_user_preference(user_id, "voice_reply", "false").lower() == "true"
+    if not (is_voice_query or voice_pref):
+        return
+
+    try:
+        voice_name = database.get_user_preference(user_id, "voice_name", "bn-BD-PradeepNeural")
+        audio_bytes, provider = await voice_service.text_to_speech_async(reply_text, voice=voice_name)
+        if audio_bytes and len(audio_bytes) > 1000:
+            import io
+            voice_file = io.BytesIO(audio_bytes)
+            voice_file.name = "voice_reply.mp3"
+            await bot.send_voice(
+                chat_id=chat_id,
+                voice=voice_file,
+                caption=f"🎙️ Goodushh Voice ({provider})"
+            )
+    except Exception as e:
+        logger.warning(f"Failed to generate/send voice reply: {e}")
+
 # ----------------- Message & Voice Handlers ----------------- #
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -698,7 +769,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    await process_user_text(update, context, text)
+    await process_user_text(update, context, text, is_voice_query=False)
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Process incoming Telegram voice notes and audio messages."""
@@ -736,13 +807,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.MARKDOWN
         )
 
-        await process_user_text(update, context, transcribed_text, voice_status_msg=status_msg)
+        await process_user_text(update, context, transcribed_text, voice_status_msg=status_msg, is_voice_query=True)
 
     except Exception as e:
         logger.error(f"Error handling voice message: {e}")
         await update.message.reply_text(f"❌ ভয়েস প্রসেস করতে সমস্যা হয়েছে: {str(e)}")
 
-async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, voice_status_msg=None):
+async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, voice_status_msg=None, is_voice_query: bool = False):
     """Unified handler for processing both typed and voice-transcribed user input."""
     user = update.effective_user
 
@@ -967,6 +1038,7 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             except Exception:
                 pass
             await send_split_message(context.bot, update.effective_chat.id, report_text, parse_mode=ParseMode.MARKDOWN)
+            await send_voice_reply_if_needed(context.bot, update.effective_chat.id, user.id, report_text, is_voice_query=is_voice_query)
             database.add_message(user.id, "user", text)
             database.add_message(user.id, "assistant", f"[Technical Analysis & Candle Dissection for {sym.upper()} ({tf}) displayed]")
             return
@@ -994,6 +1066,7 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             rem_id = database.add_reminder(user.id, clean_task, remind_at.isoformat())
             rem_reply = f"✅ রিমাইন্ডার সেট করা হয়েছে! (ID: {rem_id})\n⏰ সময়: {calc_mins} মিনিট পর\n📝 কাজ: *{clean_task}*"
             await update.message.reply_text(rem_reply, parse_mode=ParseMode.MARKDOWN)
+            await send_voice_reply_if_needed(context.bot, update.effective_chat.id, user.id, rem_reply, is_voice_query=is_voice_query)
             database.add_message(user.id, "user", text)
             database.add_message(user.id, "assistant", f"[Reminder set: {clean_task} in {calc_mins}m]")
             return
@@ -1032,6 +1105,9 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     except Exception:
         # Fallback to plain text if markdown formatting has unmatched characters
         await update.message.reply_text(final_reply)
+
+    # Dispatch Voice Reply if requested or enabled
+    await send_voice_reply_if_needed(context.bot, update.effective_chat.id, user.id, answer, is_voice_query=is_voice_query)
 
 # ----------------- Background Reminder Checker ----------------- #
 
@@ -1226,6 +1302,8 @@ def main():
     app.add_handler(CommandHandler("ta", ta_command))
     app.add_handler(CommandHandler("signal", ta_command))
     app.add_handler(CommandHandler("candledissect", ta_command))
+    app.add_handler(CommandHandler("voice", voice_command))
+    app.add_handler(CommandHandler("tts", voice_command))
 
     # Register Voice and Text Message Handlers
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))

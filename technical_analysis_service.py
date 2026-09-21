@@ -116,13 +116,79 @@ def get_llm() -> MultiTierLLMManager:
         _llm_instance = MultiTierLLMManager()
     return _llm_instance
 
+def extract_timeframe_from_text(text: str) -> Optional[str]:
+    """
+    Scans a free-form natural language query (Bengali or English) and extracts
+    the requested timeframe if explicitly mentioned. Returns None if no timeframe is specified.
+    """
+    if not text:
+        return None
+
+    t_lower = text.lower()
+
+    # Check 1 Day (1d)
+    if any(k in t_lower for k in [
+        "daily", "day", "ডেইলি", "দৈনিক", "1 day", "1day", "১ দিন", "১দিন", "১দিনের",
+        "1d", "d1", "একদিন", "এক দিন"
+    ]):
+        return "1d"
+
+    # Check 4 Hours (4h)
+    if any(k in t_lower for k in [
+        "4h", "h4", "4 hour", "4 hours", "4 hr", "4hr", "৪ ঘণ্টা", "৪ঘণ্টা", "৪ ঘন্টা", "৪ঘন্টা",
+        "৪ ঘণ্টার", "৪ ঘন্টার", "4 ঘণ্টা", "4 ঘন্টা", "চার ঘণ্টা", "চার ঘন্টা"
+    ]):
+        return "4h"
+
+    # Check 1 Hour (1h)
+    if any(k in t_lower for k in [
+        "1h", "h1", "1 hour", "1 hours", "1 hr", "1hr", "60m", "m60", "১ ঘণ্টা", "১ঘণ্টা", "১ ঘন্টা", "১ঘন্টা",
+        "১ ঘণ্টার", "১ ঘন্টার", "1 ঘণ্টা", "1 ঘন্টা", "এক ঘণ্টা", "এক ঘন্টা", "প্রতি ঘণ্টা"
+    ]):
+        return "1h"
+
+    # Check 30 Minutes (30m)
+    if any(k in t_lower for k in [
+        "30m", "m30", "30 min", "30 mins", "30 minute", "30 minutes", "৩০ মিনিট", "৩০মিনিট",
+        "৩০ মিনিটের", "30 মিনিট", "30মিনিট", "আধা ঘণ্টা", "আধা ঘন্টা", "আধ ঘণ্টা", "আধ ঘন্টা"
+    ]):
+        return "30m"
+
+    # Check 15 Minutes (15m)
+    if any(k in t_lower for k in [
+        "15m", "m15", "15 min", "15 mins", "15 minute", "15 minutes", "১৫ মিনিট", "১৫মিনিট",
+        "১৫ মিনিটের", "15 মিনিট", "15মিনিট"
+    ]):
+        return "15m"
+
+    # Check 5 Minutes (5m)
+    if any(k in t_lower for k in [
+        "5m", "m5", "5 min", "5 mins", "5 minute", "5 minutes", "৫ মিনিট", "৫মিনিট",
+        "৫ মিনিটের", "5 মিনিট", "5মিনিট", "পাঁচ মিনিট"
+    ]):
+        return "5m"
+
+    # Check 1 Minute (1m)
+    if any(k in t_lower for k in [
+        "1m", "m1", "1 min", "1 minute", "১ মিনিট", "১মিনিট", "১ মিনিটের", "1 মিনিট", "1মিনিট", "এক মিনিট"
+    ]):
+        return "1m"
+
+    return None
+
 def normalize_timeframe(tf: Optional[str]) -> str:
     """
-    Normalizes various timeframe representations (e.g., M15, 15m, 15min, H1, 1h, D1, daily)
-    into a standard interval recognized by Yahoo Finance chart API.
+    Normalizes various timeframe representations (e.g., M15, 15m, 15min, H1, 1h, D1, daily,
+    or Bengali phrases like '১ ঘণ্টা', '৪ ঘণ্টা', '৫ মিনিট') into a standard interval.
     """
     if not tf:
         return "15m"
+
+    # Check Bengali or compound phrase match first
+    extracted = extract_timeframe_from_text(str(tf))
+    if extracted:
+        return extracted
+
     clean = (
         str(tf).strip()
         .lower()
@@ -196,39 +262,48 @@ def resolve_symbol(query: str) -> Tuple[str, str]:
     # Default fallback: treat as raw ticker
     return (raw.upper(), raw.upper())
 
-def parse_ta_args(args: List[str]) -> Tuple[str, str]:
+def parse_ta_args(args: List[str]) -> Tuple[str, str, bool]:
     """
     Parses arbitrary command arguments like ['s&p500', 'M15'], ['s&p', '500', '15m'], or ['gold'].
-    Intelligently detects if one of the tokens is a timeframe (M5, M15, 1h, etc.)
+    Intelligently detects if one of the tokens is a timeframe (M5, M15, 1h, 4h, 1d, etc.)
     and assembles the remaining tokens into the symbol name.
+    Returns: (symbol_str, timeframe, is_default_timeframe)
     """
     if not args:
-        return ("gold", "15m")
+        return ("gold", "15m", True)
 
-    known_tfs = {
-        "1m", "m1", "5m", "m5", "15m", "m15", "30m", "m30",
-        "1h", "h1", "4h", "h4", "1d", "d1", "daily"
-    }
+    full_query = " ".join(args).strip()
 
     # Check if last token is a timeframe
     last_token = args[-1].lower().replace(" ", "")
-    if last_token in known_tfs:
-        norm_tf = normalize_timeframe(last_token)
+    tf_from_last = extract_timeframe_from_text(last_token)
+    if tf_from_last and len(args) > 1:
         symbol_tokens = args[:-1]
         symbol_str = " ".join(symbol_tokens).strip() if symbol_tokens else "gold"
-        return (symbol_str, norm_tf)
+        return (symbol_str, tf_from_last, False)
 
     # Check if first token is a timeframe (e.g. /signal 15m gold)
     first_token = args[0].lower().replace(" ", "")
-    if first_token in known_tfs:
-        norm_tf = normalize_timeframe(first_token)
+    tf_from_first = extract_timeframe_from_text(first_token)
+    if tf_from_first and len(args) > 1:
         symbol_tokens = args[1:]
         symbol_str = " ".join(symbol_tokens).strip() if symbol_tokens else "gold"
-        return (symbol_str, norm_tf)
+        return (symbol_str, tf_from_first, False)
+
+    # Check if user passed only a timeframe: e.g. /signal 1h
+    if len(args) == 1:
+        tf_only = extract_timeframe_from_text(args[0])
+        if tf_only:
+            return ("gold", tf_only, False)
+
+    # Check anywhere in query
+    extracted_tf = extract_timeframe_from_text(full_query)
+    if extracted_tf:
+        return (full_query, extracted_tf, False)
 
     # Default: entire arguments are symbol, timeframe defaults to 15m
     symbol_str = " ".join(args).strip()
-    return (symbol_str, "15m")
+    return (symbol_str, "15m", True)
 
 def fetch_candles(ticker: str, interval: str = "15m", range_str: str = "1d") -> Optional[List[Dict[str, Any]]]:
     """
@@ -486,7 +561,7 @@ def analyze_candle_sequence(candles: List[Dict[str, Any]], sub_candles_5m: Optio
 
 # ----------------- LLM Forensic Synthesis & Signal Generation ----------------- #
 
-def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m") -> str:
+def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m", is_default_tf: bool = False) -> str:
     """
     Main entry point: fetches live OHLCV, calculates microscopic candle anatomy,
     reconstructs temporal formation, detects liquidity traps, and generates an institutional
@@ -625,8 +700,12 @@ Write directly and clearly. Provide exact, specific numeric prices for Entry, SL
     llm = get_llm()
     try:
         report_text, provider_used, _ = llm.generate_response(prompt=prompt)
-        # Append footer with provider info and asset badge
         footer = f"\n\n───────────────\n📊 *Asset:* {display_name} | *Timeframe:* {timeframe}\n🤖 *Engine:* {provider_used} (Institutional Microstructure)"
+        if is_default_tf:
+            footer += (
+                f"\n\n⏱️ *অন্যান্য টাইমফ্রেম সুইচ:* `/signal {symbol_query} 5m` | `/signal {symbol_query} 1h` | `/signal {symbol_query} 4h` | `/signal {symbol_query} 1d`\n"
+                f"💡 *টিপ:* ডিফল্ট হিসেবে ইন্ট্রাডে 15m বিশ্লেষণ দেওয়া হয়েছে। অন্য টাইমফ্রেম চাইলে মুখে বা লিখে বলুন: '১ ঘণ্টার এনালাইসিস', '৪ ঘণ্টার চার্ট' বা '৫ মিনিট'।"
+            )
         return report_text + footer
     except Exception as e:
         logger.error(f"Error generating candle dissection with LLM: {e}")
@@ -652,7 +731,7 @@ Write directly and clearly. Provide exact, specific numeric prices for Entry, SL
             tp1_price = round(entry_price + (atr_val * 1.5), decimals)
             tp2_price = round(entry_price + (atr_val * 2.5), decimals)
 
-        return f"""
+        fallback_msg = f"""
 🔬 *{display_name} ({timeframe}) ক্যান্ডেল ব্যবচ্ছেদ*
 
 • বর্তমান প্রাইস: *{curr['close']}*
@@ -669,6 +748,13 @@ Write directly and clearly. Provide exact, specific numeric prices for Entry, SL
 🏆 *টার্গেট ২ (TP2):* `{tp2_price}` (1:2.5 RR)
 ⚖️ *রিস্ক-টু-রিওয়ার্ড (RRR):* `1:2.5`
 """
+        if is_default_tf:
+            fallback_msg += (
+                f"\n───────────────\n"
+                f"⏱️ *অন্যান্য টাইমফ্রেম:* `/signal {symbol_query} 5m` | `/signal {symbol_query} 1h` | `/signal {symbol_query} 4h`\n"
+                f"💡 *টিপ:* ডিফল্ট হিসেবে 15m বিশ্লেষণ দেওয়া হয়েছে। ১ ঘণ্টা বা ৪ ঘণ্টা দেখতে সরাসরি বলুন।"
+            )
+        return fallback_msg
 
 # ----------------- Automated Intraday Scanner for High Conviction Setups ----------------- #
 

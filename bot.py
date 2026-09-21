@@ -653,7 +653,7 @@ async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await unauthorized_reply(update)
         return
 
-    symbol, timeframe = technical_analysis_service.parse_ta_args(context.args if context.args else [])
+    symbol, timeframe, is_default_tf = technical_analysis_service.parse_ta_args(context.args if context.args else [])
     ticker, display_name = technical_analysis_service.resolve_symbol(symbol)
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -668,7 +668,8 @@ async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             None,
             technical_analysis_service.generate_candle_dissection_report,
             symbol,
-            timeframe
+            timeframe,
+            is_default_tf
         )
         try:
             await status_msg.delete()
@@ -1014,15 +1015,14 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             if s in lower_text:
                 sym = s
                 break
-        for t in ["1m", "m1", "5m", "m5", "15m", "m15", "30m", "m30", "1h", "h1", "4h", "h4", "1d", "d1"]:
-            if t in lower_text.split():
-                tf = technical_analysis_service.normalize_timeframe(t)
-                break
+        # Extract timeframe if user specified one in Bengali or English
+        extracted_tf = technical_analysis_service.extract_timeframe_from_text(text)
+        if extracted_tf:
+            tf = extracted_tf
+            is_default_tf = False
         else:
-            for t in ["15m", "5m", "30m", "1h", "4h", "1d", "m15", "m5", "m30", "h1", "h4", "d1"]:
-                if t in lower_text:
-                    tf = technical_analysis_service.normalize_timeframe(t)
-                    break
+            tf = "15m"
+            is_default_tf = True
 
         ticker, display_name = technical_analysis_service.resolve_symbol(sym)
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
@@ -1036,7 +1036,8 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 None,
                 technical_analysis_service.generate_candle_dissection_report,
                 sym,
-                tf
+                tf,
+                is_default_tf
             )
             try:
                 await status_msg.delete()

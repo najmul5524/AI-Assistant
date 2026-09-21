@@ -1253,7 +1253,11 @@ async def scheduled_technical_scanner_job(context: ContextTypes.DEFAULT_TYPE):
                     f"⚡ *হাই-কনভিকশন ইন্ট্রাডে টেকনিক্যাল অ্যালার্ট!*\n\n"
                     f"📊 *অ্যাসেট:* {alert['name']} ({alert['timeframe']})\n"
                     f"🎯 *সিগন্যাল:* {alert['direction']}\n"
-                    f"💵 *ক্লোজ প্রাইস:* `{alert['price']}`\n\n"
+                    f"💵 *এন্ট্রি প্রাইস:* `{alert.get('entry', alert['price'])}`\n"
+                    f"🛑 *স্টপ লস (SL):* `{alert.get('sl', 'N/A')}` (বাফার সহ ইনভ্যালিডেশন)\n"
+                    f"🏁 *টেক প্রফিট ১ (TP1):* `{alert.get('tp1', 'N/A')}` (1:1.5 RR)\n"
+                    f"🏆 *টেক প্রফিট ২ (TP2):* `{alert.get('tp2', 'N/A')}` (1:2.5 RR)\n"
+                    f"⚖️ *রিস্ক-টু-রিওয়ার্ড:* `{alert.get('rrr', '1:2.5')}`\n\n"
                     f"🔍 *সেটআপ ব্যবচ্ছেদ:*\n{alert['setup_desc']}\n\n"
                     f"💡 বিস্তারিত ক্যান্ডেল অ্যানাটমি দেখতে `/ta {alert['ticker']}` কমান্ড দিন।"
                 )

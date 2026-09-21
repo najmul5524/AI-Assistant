@@ -451,14 +451,14 @@ Based on the forensic anatomy and ATR ({inds['atr_14']}), provide precise tradin
     - 🔍 **কেন অপেক্ষা করবেন:** (e.g. মার্কেট বর্তমানে ইনসাইড বার কম্প্রেশন বা নো-ট্রেড জোনে রয়েছে)
     - 🟢 **বাই কনফার্মেশন লেভেল (Buy Trigger Level):** (প্রাইস কোন লেভেলের উপরে ব্রেক করে ক্যান্ডেল ক্লোজ হলে বাই করবেন)
     - 🔴 **সেল কনফার্মেশন লেভেল (Sell Trigger Level):** (প্রাইস কোন লেভেলের নিচে ব্রেক করে ক্যান্ডেল ক্লোজ হলে সেল করবেন)
-- 🎯 **Entry Price Zone (OTE):** (নির্দিষ্ট এন্ট্রি জোন বা পুলব্যাক লেভেল)
-- 🛑 **Stop Loss (SL):** (লিকুইডিটি বাফারসহ ইনভ্যালিডেশন লেভেল)
-- 🏁 **Take Profit 1 (TP1):** (তাৎক্ষণিক লিকুইডিটি টার্গেট / 1:1.5 RR)
-- 🏆 **Take Profit 2 (TP2):** (মেজর সুইং টার্গেট / 1:2.5+ RR)
+- 🎯 **Entry Price Zone (OTE):** (সুনির্দিষ্ট সংখ্যাসূচক এন্ট্রি প্রাইস বা OTE জোন, যেমন: `{curr['close']}` বা পুলব্যাক রেঞ্জ)
+- 🛑 **Stop Loss (SL):** (বাধ্যতামূলক সুনির্দিষ্ট সংখ্যাসূচক ইনভ্যালিডেশন প্রাইস - সুইপ উইক ও ATR বাফারসহ, যেমন: `{round(curr['low'] - (inds['atr_14'] * 0.3), 2) if curr['is_bullish'] else round(curr['high'] + (inds['atr_14'] * 0.3), 2)}`)
+- 🏁 **Take Profit 1 (TP1):** (বাধ্যতামূলক সুনির্দিষ্ট সংখ্যাসূচক টেক প্রফিট প্রাইস - মিনিমাম 1:1.5 Risk-to-Reward)
+- 🏆 **Take Profit 2 (TP2):** (বাধ্যতামূলক সুনির্দিষ্ট সংখ্যাসূচক টেক প্রফিট প্রাইস - 1:2.5+ Risk-to-Reward মেজর আনটাচড লেভেল)
 - ⚖️ **Risk-to-Reward Ratio (RRR):** (যেমন 1:2.5)
 - 📊 **Institutional Confluence Score:** (যেমন 85% Confluence)
 
-Write directly and clearly. Use bolding and bullet points for readability on Telegram. Do not include markdown code block quotes around the entire text.
+Write directly and clearly. Provide exact, specific numeric prices for Entry, SL, TP1, and TP2 so the trader can immediately set limit/stop orders without guesswork. Use bolding and bullet points for readability on Telegram. Do not include markdown code block quotes around the entire text.
 """
 
     llm = get_llm()
@@ -469,12 +469,27 @@ Write directly and clearly. Use bolding and bullet points for readability on Tel
         return report_text + footer
     except Exception as e:
         logger.error(f"Error generating candle dissection with LLM: {e}")
-        # Fallback manual formatted report if LLM fails
         action_decision = "⏳ WAIT (কনফার্মেশনের জন্য অপেক্ষা করুন)"
+        entry_price = curr['close']
+        atr_val = inds.get('atr_14', 1.0)
+        decimals = 2 if entry_price > 10 else 4
+
         if inter['sweep_prev_low'] or inter['true_break_high']:
             action_decision = "🟢 BUY (লং এন্ট্রি কনফার্মড)"
+            sl_price = round(curr['low'] - (atr_val * 0.3), decimals)
+            risk = max(entry_price - sl_price, 0.0001)
+            tp1_price = round(entry_price + (risk * 1.5), decimals)
+            tp2_price = round(entry_price + (risk * 2.5), decimals)
         elif inter['sweep_prev_high'] or inter['true_break_low']:
             action_decision = "🔴 SELL (শর্ট এন্ট্রি কনফার্মড)"
+            sl_price = round(curr['high'] + (atr_val * 0.3), decimals)
+            risk = max(sl_price - entry_price, 0.0001)
+            tp1_price = round(entry_price - (risk * 1.5), decimals)
+            tp2_price = round(entry_price - (risk * 2.5), decimals)
+        else:
+            sl_price = round(curr['low'] - (atr_val * 0.5), decimals)
+            tp1_price = round(entry_price + (atr_val * 1.5), decimals)
+            tp2_price = round(entry_price + (atr_val * 2.5), decimals)
 
         return f"""
 🔬 *{display_name} ({timeframe}) ক্যান্ডেল ব্যবচ্ছেদ*
@@ -487,7 +502,11 @@ Write directly and clearly. Use bolding and bullet points for readability on Tel
 • ভলিউম অনুপাত (RVOL): *{inds['rvol']}x*
 
 🎯 *সিদ্ধান্ত (Action):* *{action_decision}*
-• ইনভ্যালিডেশন / বাফার: *{curr['low'] - inds['atr_14'] if curr['is_bullish'] else curr['high'] + inds['atr_14']}*
+🎯 *এন্ট্রি জোন (Entry):* `{entry_price}`
+🛑 *স্টপ লস (SL):* `{sl_price}`
+🏁 *টার্গেট ১ (TP1):* `{tp1_price}` (1:1.5 RR)
+🏆 *টার্গেট ২ (TP2):* `{tp2_price}` (1:2.5 RR)
+⚖️ *রিস্ক-টু-রিওয়ার্ড (RRR):* `1:2.5`
 """
 
 # ----------------- Automated Intraday Scanner for High Conviction Setups ----------------- #
@@ -546,6 +565,27 @@ def scan_high_conviction_setups() -> List[Dict[str, Any]]:
             if is_bullish_sweep or is_bearish_sweep:
                 _ALERTED_CANDLES.add(candle_id)
                 direction = "🟢 BULLISH LIQUIDITY SWEEP (Buy Reversal)" if is_bullish_sweep else "🔴 BEARISH LIQUIDITY SWEEP (Sell Reversal)"
+                
+                entry_val = closed_candle["close"]
+                decimals = 2 if entry_val > 10 else 4
+
+                # Micro indicators for dynamic ATR buffer
+                inds = calculate_micro_indicators(candles[:-1])
+                atr_val = inds.get("atr_14", abs(closed_candle["high"] - closed_candle["low"]))
+                if atr_val == 0:
+                    atr_val = abs(closed_candle["high"] - closed_candle["low"]) or 1.0
+
+                if is_bullish_sweep:
+                    sl_val = round(closed_candle["low"] - (atr_val * 0.25), decimals)
+                    risk = max(entry_val - sl_val, 0.0001)
+                    tp1_val = round(entry_val + (risk * 1.5), decimals)
+                    tp2_val = round(entry_val + (risk * 2.5), decimals)
+                else:
+                    sl_val = round(closed_candle["high"] + (atr_val * 0.25), decimals)
+                    risk = max(sl_val - entry_val, 0.0001)
+                    tp1_val = round(entry_val - (risk * 1.5), decimals)
+                    tp2_val = round(entry_val - (risk * 2.5), decimals)
+
                 setup_desc = (
                     f"পূর্ববর্তী 15m ক্যান্ডেলের Low ({prev_candle['low']}) ভেঙে রিটেইল স্টপ হান্ট করে {anat['lower_wick_pct']}% লোয়ার উইক নিয়ে ক্লোজ হয়েছে।"
                     if is_bullish_sweep else
@@ -555,7 +595,12 @@ def scan_high_conviction_setups() -> List[Dict[str, Any]]:
                     "ticker": ticker,
                     "name": name,
                     "timeframe": "15m",
-                    "price": closed_candle["close"],
+                    "price": entry_val,
+                    "entry": entry_val,
+                    "sl": sl_val,
+                    "tp1": tp1_val,
+                    "tp2": tp2_val,
+                    "rrr": "1:2.5",
                     "direction": direction,
                     "is_bullish": is_bullish_sweep,
                     "setup_desc": setup_desc,

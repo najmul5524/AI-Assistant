@@ -653,18 +653,12 @@ async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await unauthorized_reply(update)
         return
 
-    symbol = "gold"
-    timeframe = "15m"
-    if context.args:
-        symbol = context.args[0].lower()
-        if len(context.args) > 1:
-            raw_tf = context.args[1].lower()
-            if raw_tf in ["5m", "15m", "1h", "1d", "4h"]:
-                timeframe = raw_tf
+    symbol, timeframe = technical_analysis_service.parse_ta_args(context.args if context.args else [])
+    ticker, display_name = technical_analysis_service.resolve_symbol(symbol)
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     status_msg = await update.message.reply_text(
-        f"🔬 *{symbol.upper()} ({timeframe})* এর রিয়েল-টাইম ক্যান্ডেল ব্যবচ্ছেদ, ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল তৈরি করা হচ্ছে...",
+        f"🔬 *{display_name} ({timeframe})* এর রিয়েল-টাইম ক্যান্ডেল ব্যবচ্ছেদ, ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল তৈরি করা হচ্ছে...",
         parse_mode=ParseMode.MARKDOWN
     )
 
@@ -1006,23 +1000,34 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     ]
     asset_words = [
         "gold", "গোল্ড", "xau", "btc", "বিটকয়েন", "bitcoin", "eth", "ইথেরিয়াম", "ethereum",
-        "eur", "ইউরো", "gbp", "jpy", "nasdaq", "ন্যাশডাক", "nq", "oil", "তেল", "silver", "সিলভার"
+        "eur", "ইউরো", "gbp", "jpy", "nasdaq", "ন্যাশডাক", "nq", "oil", "তেল", "silver", "সিলভার",
+        "sp500", "s&p", "s&p500", "us500", "spx", "es", "dow", "us30", "dxy", "sol", "xrp"
     ]
     if any(k in lower_text for k in ta_triggers) and (any(w in lower_text for w in asset_words) or any(w in lower_text for w in ["এনালাইসিস", "সিগনাল", "সিগন্যাল", "মুভমেন্ট", "ব্যবচ্ছেদ"])):
         sym = "gold"
         tf = "15m"
-        for s in ["btc", "bitcoin", "eth", "ethereum", "eurusd", "gbpusd", "usdjpy", "nasdaq", "nq", "silver", "oil", "gold", "xau"]:
+        for s in [
+            "s&p 500", "s&p500", "s&p", "sp500", "us500", "spx", "nasdaq 100", "nasdaq", "nq",
+            "dow jones", "dow", "us30", "btc", "bitcoin", "eth", "ethereum", "eurusd", "gbpusd",
+            "usdjpy", "silver", "oil", "gold", "xau", "dxy", "sol", "xrp"
+        ]:
             if s in lower_text:
                 sym = s
                 break
-        for t in ["5m", "15m", "1h", "1d", "4h"]:
-            if t in lower_text:
-                tf = t
+        for t in ["1m", "m1", "5m", "m5", "15m", "m15", "30m", "m30", "1h", "h1", "4h", "h4", "1d", "d1"]:
+            if t in lower_text.split():
+                tf = technical_analysis_service.normalize_timeframe(t)
                 break
+        else:
+            for t in ["15m", "5m", "30m", "1h", "4h", "1d", "m15", "m5", "m30", "h1", "h4", "d1"]:
+                if t in lower_text:
+                    tf = technical_analysis_service.normalize_timeframe(t)
+                    break
 
+        ticker, display_name = technical_analysis_service.resolve_symbol(sym)
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         status_msg = await update.message.reply_text(
-            f"🔬 *{sym.upper()} ({tf})* এর রিয়েল-টাইম ক্যান্ডেল ব্যবচ্ছেদ ও ট্রেডিং সিগন্যাল তৈরি হচ্ছে...",
+            f"🔬 *{display_name} ({tf})* এর রিয়েল-টাইম ক্যান্ডেল ব্যবচ্ছেদ ও ট্রেডিং সিগন্যাল তৈরি হচ্ছে...",
             parse_mode=ParseMode.MARKDOWN
         )
         try:

@@ -24,18 +24,58 @@ HEADERS = {
 
 # Symbol aliases mapping
 SYMBOL_MAP = {
+    # Commodities - Precious Metals
     "gold": ("GC=F", "Gold (XAU/USD)"),
     "xau": ("GC=F", "Gold (XAU/USD)"),
     "xauusd": ("GC=F", "Gold (XAU/USD)"),
+    "gc": ("GC=F", "Gold (XAU/USD)"),
     "silver": ("SI=F", "Silver (XAG/USD)"),
     "xag": ("SI=F", "Silver (XAG/USD)"),
     "xagusd": ("SI=F", "Silver (XAG/USD)"),
-    "btc": ("BTC-USD", "Bitcoin (BTC/USD)"),
-    "bitcoin": ("BTC-USD", "Bitcoin (BTC/USD)"),
-    "btcusd": ("BTC-USD", "Bitcoin (BTC/USD)"),
-    "eth": ("ETH-USD", "Ethereum (ETH/USD)"),
-    "ethereum": ("ETH-USD", "Ethereum (ETH/USD)"),
-    "ethusd": ("ETH-USD", "Ethereum (ETH/USD)"),
+    "si": ("SI=F", "Silver (XAG/USD)"),
+
+    # US Indices - S&P 500
+    "sp500": ("ES=F", "S&P 500 Futures"),
+    "spx": ("ES=F", "S&P 500 Futures"),
+    "sp": ("ES=F", "S&P 500 Futures"),
+    "us500": ("ES=F", "S&P 500 (US500)"),
+    "es": ("ES=F", "S&P 500 Futures"),
+    "spy": ("SPY", "SPDR S&P 500 ETF"),
+    "sandp": ("ES=F", "S&P 500 Futures"),
+    "sandp500": ("ES=F", "S&P 500 Futures"),
+    "snp500": ("ES=F", "S&P 500 Futures"),
+
+    # US Indices - Nasdaq 100
+    "nasdaq": ("NQ=F", "Nasdaq 100 Futures"),
+    "nasdaq100": ("NQ=F", "Nasdaq 100 Futures"),
+    "us100": ("NQ=F", "Nasdaq 100 (US100)"),
+    "nq": ("NQ=F", "Nasdaq 100 Futures"),
+    "ndx": ("NQ=F", "Nasdaq 100 Futures"),
+    "qqq": ("QQQ", "Invesco QQQ Trust"),
+
+    # US Indices - Dow Jones 30
+    "dow": ("YM=F", "Dow Jones Futures"),
+    "dowjones": ("YM=F", "Dow Jones Futures"),
+    "us30": ("YM=F", "Dow Jones (US30)"),
+    "ym": ("YM=F", "Dow Jones Futures"),
+    "dji": ("YM=F", "Dow Jones Futures"),
+    "dia": ("DIA", "SPDR Dow Jones ETF"),
+
+    # US Dollar Index (DXY)
+    "dxy": ("DX-Y.NYB", "US Dollar Index (DXY)"),
+    "dx": ("DX-Y.NYB", "US Dollar Index (DXY)"),
+    "dollar": ("DX-Y.NYB", "US Dollar Index (DXY)"),
+    "usdindex": ("DX-Y.NYB", "US Dollar Index (DXY)"),
+
+    # Commodities - Energy
+    "oil": ("CL=F", "Crude Oil (WTI)"),
+    "crude": ("CL=F", "Crude Oil (WTI)"),
+    "crudeoil": ("CL=F", "Crude Oil (WTI)"),
+    "wti": ("CL=F", "Crude Oil (WTI)"),
+    "cl": ("CL=F", "Crude Oil (WTI)"),
+    "brent": ("BZ=F", "Brent Crude Oil"),
+
+    # Major Forex Pairs
     "eur": ("EURUSD=X", "EUR/USD"),
     "eurusd": ("EURUSD=X", "EUR/USD"),
     "gbp": ("GBPUSD=X", "GBP/USD"),
@@ -48,16 +88,24 @@ SYMBOL_MAP = {
     "usdcad": ("CAD=X", "USD/CAD"),
     "chf": ("CHF=X", "USD/CHF"),
     "usdchf": ("CHF=X", "USD/CHF"),
-    "nasdaq": ("NQ=F", "Nasdaq 100 Futures"),
-    "nq": ("NQ=F", "Nasdaq 100 Futures"),
-    "ndx": ("NQ=F", "Nasdaq 100 Futures"),
-    "sp500": ("ES=F", "S&P 500 Futures"),
-    "spx": ("ES=F", "S&P 500 Futures"),
-    "es": ("ES=F", "S&P 500 Futures"),
-    "oil": ("CL=F", "Crude Oil (WTI)"),
-    "crude": ("CL=F", "Crude Oil (WTI)"),
-    "wti": ("CL=F", "Crude Oil (WTI)"),
-    "cl": ("CL=F", "Crude Oil (WTI)")
+    "nzd": ("NZDUSD=X", "NZD/USD"),
+    "nzdusd": ("NZDUSD=X", "NZD/USD"),
+    "eurgbp": ("EURGBP=X", "EUR/GBP"),
+    "eurjpy": ("EURJPY=X", "EUR/JPY"),
+    "gbpjpy": ("GBPJPY=X", "GBP/JPY"),
+
+    # Crypto
+    "btc": ("BTC-USD", "Bitcoin (BTC/USD)"),
+    "bitcoin": ("BTC-USD", "Bitcoin (BTC/USD)"),
+    "btcusd": ("BTC-USD", "Bitcoin (BTC/USD)"),
+    "eth": ("ETH-USD", "Ethereum (ETH/USD)"),
+    "ethereum": ("ETH-USD", "Ethereum (ETH/USD)"),
+    "ethusd": ("ETH-USD", "Ethereum (ETH/USD)"),
+    "sol": ("SOL-USD", "Solana (SOL/USD)"),
+    "solana": ("SOL-USD", "Solana (SOL/USD)"),
+    "solusd": ("SOL-USD", "Solana (SOL/USD)"),
+    "xrp": ("XRP-USD", "Ripple (XRP/USD)"),
+    "ripple": ("XRP-USD", "Ripple (XRP/USD)")
 }
 
 _llm_instance = None
@@ -68,20 +116,119 @@ def get_llm() -> MultiTierLLMManager:
         _llm_instance = MultiTierLLMManager()
     return _llm_instance
 
+def normalize_timeframe(tf: Optional[str]) -> str:
+    """
+    Normalizes various timeframe representations (e.g., M15, 15m, 15min, H1, 1h, D1, daily)
+    into a standard interval recognized by Yahoo Finance chart API.
+    """
+    if not tf:
+        return "15m"
+    clean = (
+        str(tf).strip()
+        .lower()
+        .replace(" ", "")
+        .replace("min", "m")
+        .replace("mins", "m")
+        .replace("minute", "m")
+        .replace("minutes", "m")
+        .replace("hour", "h")
+        .replace("hours", "h")
+        .replace("day", "d")
+        .replace("days", "d")
+    )
+    tf_map = {
+        "1m": "1m", "m1": "1m",
+        "5m": "5m", "m5": "5m",
+        "15m": "15m", "m15": "15m",
+        "30m": "30m", "m30": "30m",
+        "1h": "1h", "h1": "1h", "60m": "1h", "m60": "1h",
+        "4h": "4h", "h4": "4h",
+        "1d": "1d", "d1": "1d", "daily": "1d", "d": "1d"
+    }
+    return tf_map.get(clean, "15m")
+
 def resolve_symbol(query: str) -> Tuple[str, str]:
-    """Resolves user query to Yahoo Finance ticker and human readable name."""
-    clean = query.strip().lower().replace("/", "").replace("-", "")
+    """
+    Resolves user query to Yahoo Finance ticker and human readable name.
+    Strips out slashes, dashes, ampersands ('&'), spaces, and underscores.
+    """
+    if not query:
+        return ("GC=F", "Gold (XAU/USD)")
+
+    raw = query.strip()
+    clean = (
+        raw.lower()
+        .replace("/", "")
+        .replace("-", "")
+        .replace("&", "")
+        .replace(" ", "")
+        .replace("_", "")
+        .replace(".", "")
+    )
+    
+    # Direct match in alias map
     if clean in SYMBOL_MAP:
         return SYMBOL_MAP[clean]
-    
-    # Try partial matching
-    for key, val in SYMBOL_MAP.items():
-        if key in clean or clean in key:
+
+    # Check Bengali phonetic names
+    bn_map = {
+        "গোল্ড": ("GC=F", "Gold (XAU/USD)"),
+        "সোনা": ("GC=F", "Gold (XAU/USD)"),
+        "সিলভার": ("SI=F", "Silver (XAG/USD)"),
+        "রূপা": ("SI=F", "Silver (XAG/USD)"),
+        "তেল": ("CL=F", "Crude Oil (WTI)"),
+        "বিটকয়েন": ("BTC-USD", "Bitcoin (BTC/USD)"),
+        "ইথেরিয়াম": ("ETH-USD", "Ethereum (ETH/USD)"),
+        "ইউরো": ("EURUSD=X", "EUR/USD"),
+        "পাউন্ড": ("GBPUSD=X", "GBP/USD"),
+        "ইয়েন": ("JPY=X", "USD/JPY"),
+        "ডলার": ("DX-Y.NYB", "US Dollar Index (DXY)"),
+    }
+    for bn_key, val in bn_map.items():
+        if bn_key in raw.lower():
             return val
 
-    # Default fallback: treat as raw symbol
-    raw = query.strip().upper()
-    return (raw, raw)
+    # Try partial matching
+    for key, val in SYMBOL_MAP.items():
+        if len(key) >= 3 and (key in clean or clean in key):
+            return val
+
+    # Default fallback: treat as raw ticker
+    return (raw.upper(), raw.upper())
+
+def parse_ta_args(args: List[str]) -> Tuple[str, str]:
+    """
+    Parses arbitrary command arguments like ['s&p500', 'M15'], ['s&p', '500', '15m'], or ['gold'].
+    Intelligently detects if one of the tokens is a timeframe (M5, M15, 1h, etc.)
+    and assembles the remaining tokens into the symbol name.
+    """
+    if not args:
+        return ("gold", "15m")
+
+    known_tfs = {
+        "1m", "m1", "5m", "m5", "15m", "m15", "30m", "m30",
+        "1h", "h1", "4h", "h4", "1d", "d1", "daily"
+    }
+
+    # Check if last token is a timeframe
+    last_token = args[-1].lower().replace(" ", "")
+    if last_token in known_tfs:
+        norm_tf = normalize_timeframe(last_token)
+        symbol_tokens = args[:-1]
+        symbol_str = " ".join(symbol_tokens).strip() if symbol_tokens else "gold"
+        return (symbol_str, norm_tf)
+
+    # Check if first token is a timeframe (e.g. /signal 15m gold)
+    first_token = args[0].lower().replace(" ", "")
+    if first_token in known_tfs:
+        norm_tf = normalize_timeframe(first_token)
+        symbol_tokens = args[1:]
+        symbol_str = " ".join(symbol_tokens).strip() if symbol_tokens else "gold"
+        return (symbol_str, norm_tf)
+
+    # Default: entire arguments are symbol, timeframe defaults to 15m
+    symbol_str = " ".join(args).strip()
+    return (symbol_str, "15m")
 
 def fetch_candles(ticker: str, interval: str = "15m", range_str: str = "1d") -> Optional[List[Dict[str, Any]]]:
     """
@@ -345,24 +492,38 @@ def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m")
     reconstructs temporal formation, detects liquidity traps, and generates an institutional
     forensic dissection and high-probability trading signal in bilingual Bengali-English.
     """
+    timeframe = normalize_timeframe(timeframe)
     ticker, display_name = resolve_symbol(symbol_query)
     
-    # 1. Fetch target timeframe candles
-    candles = fetch_candles(ticker, interval=timeframe, range_str="1d")
+    # 1. Fetch target timeframe candles with dynamic range
+    if timeframe in ["1m", "5m"]:
+        primary_range = "1d"
+        fallback_range = "5d"
+    elif timeframe in ["15m", "30m", "1h"]:
+        primary_range = "5d"
+        fallback_range = "1mo"
+    else:  # 4h, 1d
+        primary_range = "1mo"
+        fallback_range = "3mo"
+
+    candles = fetch_candles(ticker, interval=timeframe, range_str=primary_range)
     if not candles or len(candles) < 5:
-        # Fallback to 5d range if market just opened
-        candles = fetch_candles(ticker, interval=timeframe, range_str="5d")
+        candles = fetch_candles(ticker, interval=timeframe, range_str=fallback_range)
 
     if not candles or len(candles) < 5:
         return f"❌ দুঃখিত, *{display_name}* ({ticker})-এর লাইভ ক্যান্ডেল ডেটা এই মুহূর্তে পাওয়া যাচ্ছে না। অনুগ্রহ করে একটু পর আবার চেষ্টা করুন বা অন্য সিম্বল দিন।"
 
-    # 2. If timeframe is 15m, fetch 5m sub-candles for intra-candle reconstruction
-    sub_5m = None
+    # 2. Fetch sub-candles for intra-candle reconstruction
+    sub_candles = None
     if timeframe == "15m":
-        sub_5m = fetch_candles(ticker, interval="5m", range_str="1d")
+        sub_candles = fetch_candles(ticker, interval="5m", range_str="1d")
+    elif timeframe in ["30m", "1h"]:
+        sub_candles = fetch_candles(ticker, interval="15m", range_str="5d")
+    elif timeframe == "4h":
+        sub_candles = fetch_candles(ticker, interval="1h", range_str="1mo")
 
     # 3. Microstructure analysis
-    analysis = analyze_candle_sequence(candles, sub_candles_5m=sub_5m)
+    analysis = analyze_candle_sequence(candles, sub_candles_5m=sub_candles)
     if not analysis:
         return f"❌ *{display_name}* এর ক্যান্ডেল ব্যবচ্ছেদ গণনায় ত্রুটি ঘটেছে।"
 

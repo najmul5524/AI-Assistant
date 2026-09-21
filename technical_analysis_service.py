@@ -444,13 +444,19 @@ Structure your response using these exact sections:
 
 🚀 *৫. হাই-কনভিকশন ট্রেডিং সেটআপ (Precision Actionable Trade Setup)*
 Based on the forensic anatomy and ATR ({inds['atr_14']}), provide precise trading parameters:
-- ⚡ **Action/Bias:** 🟢 BUY (Long) / 🔴 SELL (Short) / ⏳ WAIT (Neutral)
-- 🎯 **Entry Price Zone (OTE):** (e.g., specific price range or pull-back level)
-- 🛑 **Stop Loss (SL):** (Precise invalidation price, taking wick sweep + buffer into account)
-- 🏁 **Take Profit 1 (TP1):** (Immediate liquidity target / 1:1.5 RR)
-- 🏆 **Take Profit 2 (TP2):** (Major swing target / 1:2.5+ RR)
-- ⚖️ **Risk-to-Reward Ratio (RRR):** (e.g. 1:2.5)
-- 📊 **Institutional Confluence Score:** (e.g. 88% Confluence)
+- ⚡ **Action / Decision (সুনির্দিষ্ট সিদ্ধান্ত):**
+  * 🟢 **BUY (এখনই লং এন্ট্রি):** Use ONLY when a clear bullish liquidity sweep (Turtle soup long) or confirmed breakout with strong body is present.
+  * 🔴 **SELL (এখনই শর্ট এন্ট্রি):** Use ONLY when a clear bearish liquidity sweep (Turtle soup short) or confirmed breakdown with strong body is present.
+  * ⏳ **WAIT (কনফার্মেশনের জন্য অপেক্ষা করুন):** Use if the market is in an inside bar, indecision doji, low volume chop, or midway inside a consolidation range. If WAIT is chosen, you MUST state:
+    - 🔍 **কেন অপেক্ষা করবেন:** (e.g. মার্কেট বর্তমানে ইনসাইড বার কম্প্রেশন বা নো-ট্রেড জোনে রয়েছে)
+    - 🟢 **বাই কনফার্মেশন লেভেল (Buy Trigger Level):** (প্রাইস কোন লেভেলের উপরে ব্রেক করে ক্যান্ডেল ক্লোজ হলে বাই করবেন)
+    - 🔴 **সেল কনফার্মেশন লেভেল (Sell Trigger Level):** (প্রাইস কোন লেভেলের নিচে ব্রেক করে ক্যান্ডেল ক্লোজ হলে সেল করবেন)
+- 🎯 **Entry Price Zone (OTE):** (নির্দিষ্ট এন্ট্রি জোন বা পুলব্যাক লেভেল)
+- 🛑 **Stop Loss (SL):** (লিকুইডিটি বাফারসহ ইনভ্যালিডেশন লেভেল)
+- 🏁 **Take Profit 1 (TP1):** (তাৎক্ষণিক লিকুইডিটি টার্গেট / 1:1.5 RR)
+- 🏆 **Take Profit 2 (TP2):** (মেজর সুইং টার্গেট / 1:2.5+ RR)
+- ⚖️ **Risk-to-Reward Ratio (RRR):** (যেমন 1:2.5)
+- 📊 **Institutional Confluence Score:** (যেমন 85% Confluence)
 
 Write directly and clearly. Use bolding and bullet points for readability on Telegram. Do not include markdown code block quotes around the entire text.
 """
@@ -464,6 +470,12 @@ Write directly and clearly. Use bolding and bullet points for readability on Tel
     except Exception as e:
         logger.error(f"Error generating candle dissection with LLM: {e}")
         # Fallback manual formatted report if LLM fails
+        action_decision = "⏳ WAIT (কনফার্মেশনের জন্য অপেক্ষা করুন)"
+        if inter['sweep_prev_low'] or inter['true_break_high']:
+            action_decision = "🟢 BUY (লং এন্ট্রি কনফার্মড)"
+        elif inter['sweep_prev_high'] or inter['true_break_low']:
+            action_decision = "🔴 SELL (শর্ট এন্ট্রি কনফার্মড)"
+
         return f"""
 🔬 *{display_name} ({timeframe}) ক্যান্ডেল ব্যবচ্ছেদ*
 
@@ -474,7 +486,8 @@ Write directly and clearly. Use bolding and bullet points for readability on Tel
 • আরএসআই (RSI 14): *{inds['rsi_14']}*
 • ভলিউম অনুপাত (RVOL): *{inds['rvol']}x*
 
-🎯 *সম্ভাব্য ডিরেকশন:* {'🟢 বুলিশ রিভার্সাল' if inter['sweep_prev_low'] or curr['is_bullish'] else '🔴 বেয়ারিশ রিভার্সাল'}
+🎯 *সিদ্ধান্ত (Action):* *{action_decision}*
+• ইনভ্যালিডেশন / বাফার: *{curr['low'] - inds['atr_14'] if curr['is_bullish'] else curr['high'] + inds['atr_14']}*
 """
 
 # ----------------- Automated Intraday Scanner for High Conviction Setups ----------------- #

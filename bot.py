@@ -46,6 +46,7 @@ import google_calendar_service
 import forex_news_monitor
 import forex_digest_service
 import technical_analysis_service
+import oil_analytics_service
 import voice_service
 from llm_manager import MultiTierLLMManager
 
@@ -167,6 +168,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎙️ **ভয়েস মেসেজ সাপোর্ট:** আপনি চাইলে টাইপ না করে টেলিগ্রামে সরাসরি বাংলায় মুখে কথা বলে ভয়েস পাঠাতে পারেন! আমি আপনার কথা শুনে সাথে সাথে কাজ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
         f"• `/ta [সিম্বল] [টাইমফ্রেম]` - লাইভ ক্যান্ডেলের নিখুঁত ব্যবচ্ছেদ (Dissection), ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল (যেমন `/ta gold`, `/ta btc 5m`)\n"
+        f"• `/oil` - ক্রুড অয়েলের (WTI & Brent) খবরের পর্যায়ক্রমিক ধারা ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন\n"
         f"• `/forecast` - আগামীকালের গোল্ড, মেটাল, ফিউচার্স ও ফরেক্স প্রাইস মুভমেন্ট পূর্বাভাস\n"
         f"• `/digest` - দৈনিক একীভূত ম্যাক্রো ডাইজেস্ট ও সেন্টিমেন্ট\n"
         f"• `/forex_pdf` - সাপ্তাহিক প্রাতিষ্ঠানিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট\n"
@@ -198,7 +200,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• `/ta [সিম্বল] [টাইমফ্রেম]` বা `/signal`: ক্যান্ডেলস্টিকের মাইক্রোস্কোপিক ব্যবচ্ছেদ (Anatomy Breakdown), সময়ের সাথে ক্যান্ডেল কিভাবে তৈরি হলো (ইন্ট্রা-ক্যান্ডেল গঠনপ্রক্রিয়া), পূর্ববর্তী High/Low সুইপ বনাম ব্রেকআউট এবং এন্ট্রি, স্টপ লস ও টেক প্রফিটসহ হাই-কনভিকশন সিগন্যাল। (উদাহরণ: `/ta`, `/ta btc`, `/ta gold 5m`, `/ta eurusd 1h`)\n"
         f"• `/forecast` বা `/prediction` বা `/digest`: সারাদিনের সমস্ত নিউজ, গোল্ড (Gold), সিলভার (Silver), ফিউচার্স (S&P 500, Crude Oil) ও X.com সেন্টিমেন্ট বিশ্লেষণ করে আগামীকালের বিস্তারিত প্রাইস মুভমেন্ট পূর্বাভাস।\n"
         f"• `/forex_pdf`: সরাসরি পূর্ণাঙ্গ প্রাতিষ্ঠানিক সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট তৈরি ও ডাউনলোড।\n"
-        f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)।\n"
+        f"• `/oil`: ক্রুড অয়েল (WTI ও Brent)-এর খবরের পর্যায়ক্রমিক ধারা, লাইভ টেকনিক্যাল ডেটা ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন।\n"
+        f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)। (`/news oil` দিয়েও অয়েলের প্রেডিকশন পাওয়া যাবে)\n"
         f"• `/forex`: আজকের High & Medium Impact ফরেক্স ক্যালেন্ডার নিউজ দেখা। (`/forex all` দিয়ে পুরো সপ্তাহেরটা দেখা যাবে)\n"
         f"• `/forex_sync`: আজকের ফরেক্স নিউজ Google Calendar-এ রিমাইন্ডার অ্যালার্টসহ স্বয়ংক্রিয়ভাবে সিঙ্ক করা।\n"
         f"• `/report <বিষয়>`: যেমন `/report এআই ও ভবিষ্যৎ চাকরি বাজার` (পিডিএফ তৈরি হবে)\n"
@@ -516,6 +519,11 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await unauthorized_reply(update)
         return
 
+    # If user provided argument e.g. /news oil, /news crude, route to sequential oil analysis
+    if context.args and any(arg.lower() in ["oil", "crude", "wti", "brent", "তেল", "পেট্রোলিয়াম"] for arg in context.args):
+        await oil_command(update, context)
+        return
+
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     status_msg = await update.message.reply_text("⏳ Forex Factory থেকে সর্বশেষ ব্রেকিং নিউজ সংগ্রহ ও এআই এনালাইসিস করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
 
@@ -537,6 +545,32 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(alert_msg, parse_mode=ParseMode.MARKDOWN)
     except Exception:
         await status_msg.edit_text(alert_msg)
+
+async def oil_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /oil - Sequential oil news analysis, live prices, and short/long-term movement prediction."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    status_msg = await update.message.reply_text(
+        "🛢️ *ক্রুড অয়েল (WTI ও Brent) সিকোয়েনশিয়াল নিউজ ও মুভমেন্ট প্রেডিকশন*\n\n"
+        "⏳ সাম্প্রতিক খবরের ধারাবাহিক গতিপথ, লাইভ মার্কেট টেকনিক্যাল মেট্রিক্স এবং শর্ট/লং-টার্ম আউটলুক এনালাইসিস করা হচ্ছে...",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+    try:
+        loop = asyncio.get_running_loop()
+        report = await loop.run_in_executor(None, oil_analytics_service.generate_oil_prediction_analysis)
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+        await send_split_message(context.bot, update.effective_chat.id, report, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        logger.error(f"Error generating oil prediction report: {e}")
+        await update.message.reply_text(f"❌ তেলের পর্যায়ক্রমিক এনালাইসিস সম্পন্ন করার সময় ত্রুটি ঘটেছে: {e}")
 
 async def send_split_message(bot, chat_id: int, text: str, parse_mode=ParseMode.MARKDOWN):
     """Safely dispatches long messages, splitting into clean sections if exceeding Telegram limit."""
@@ -959,8 +993,17 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         database.add_message(user.id, "assistant", f"[Email sent to {target_email}: {subject}]", model_used=provider_used)
         return
 
-    # Check for natural language breaking news & analysis triggers
+    # Check for natural language Oil sequential news & prediction triggers
     lower_text = text.lower()
+    oil_keywords = ["oil", "তেল", "crude", "wti", "brent", "পেট্রোলিয়াম"]
+    oil_analysis_terms = ["পর্যায়ক্রমিক", "নিউজ", "মুভমেন্ট", "প্রেডিকশন", "পূর্বাভাস", "short term", "long term", "prediction", "analysis", "এনালাইসিস"]
+    if any(k in lower_text for k in oil_keywords) and any(w in lower_text for w in oil_analysis_terms):
+        await oil_command(update, context)
+        database.add_message(user.id, "user", text)
+        database.add_message(user.id, "assistant", "[Crude Oil Sequential News & Prediction Report displayed]")
+        return
+
+    # Check for natural language breaking news & analysis triggers
     if any(k in lower_text for k in ["ব্রেকিং নিউজ", "breaking news", "news analysis", "নিউজ এনালাইসিস", "মার্কেট নিউজ", "ফরেক্স নিউজ এনালাইসিস", "লেটেস্ট নিউজ"]):
         await news_command(update, context)
         database.add_message(user.id, "user", text)
@@ -1308,6 +1351,11 @@ def main():
     app.add_handler(CommandHandler("forex", forex_command))
     app.add_handler(CommandHandler("forex_sync", forex_sync_command))
     app.add_handler(CommandHandler("news", news_command))
+    app.add_handler(CommandHandler("oil", oil_command))
+    app.add_handler(CommandHandler("crude", oil_command))
+    app.add_handler(CommandHandler("crudeoil", oil_command))
+    app.add_handler(CommandHandler("wti", oil_command))
+    app.add_handler(CommandHandler("brent", oil_command))
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("forecast", digest_command))
     app.add_handler(CommandHandler("prediction", digest_command))

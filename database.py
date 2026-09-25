@@ -56,9 +56,21 @@ def init_db():
                 title TEXT NOT NULL,
                 link TEXT,
                 published_at TEXT,
+                impact TEXT DEFAULT '',
+                description TEXT DEFAULT '',
                 analyzed_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Ensure impact and description columns exist in existing database tables
+        try:
+            cursor.execute("ALTER TABLE seen_news ADD COLUMN impact TEXT DEFAULT ''")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE seen_news ADD COLUMN description TEXT DEFAULT ''")
+        except Exception:
+            pass
         
         conn.commit()
 
@@ -145,22 +157,22 @@ def is_news_seen(news_id: str) -> bool:
         cursor.execute("SELECT id FROM seen_news WHERE id = ?", (news_id,))
         return cursor.fetchone() is not None
 
-def mark_news_as_seen(news_id: str, title: str, link: str = "", published_at: str = ""):
-    """Mark a news article as analyzed in the database."""
+def mark_news_as_seen(news_id: str, title: str, link: str = "", published_at: str = "", impact: str = "", description: str = ""):
+    """Mark a news article as analyzed in the database with its impact rating and description."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT OR REPLACE INTO seen_news (id, title, link, published_at)
-            VALUES (?, ?, ?, ?)
-        """, (news_id, title, link, published_at))
+            INSERT OR REPLACE INTO seen_news (id, title, link, published_at, impact, description)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (news_id, title, link, published_at, impact, description))
         conn.commit()
 
-def get_recent_seen_news(limit: int = 30) -> List[Dict[str, Any]]:
+def get_recent_seen_news(limit: int = 50) -> List[Dict[str, Any]]:
     """Retrieve the most recent news articles recorded in the database."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, title, link, published_at FROM seen_news
+            SELECT id, title, link, published_at, impact, description FROM seen_news
             ORDER BY rowid DESC LIMIT ?
         """, (limit,))
         return [dict(row) for row in cursor.fetchall()]

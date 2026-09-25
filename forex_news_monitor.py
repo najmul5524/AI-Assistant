@@ -112,14 +112,26 @@ def fetch_forexfactory_direct_news(limit: int = 30) -> List[Dict[str, Any]]:
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     articles = []
 
-    try:
-        s = cffi_requests.Session()
-        resp = s.get(url, impersonate="safari15_5", timeout=8)
-        if resp.status_code != 200 or not resp.text:
-            logger.warning(f"ForexFactory direct scrape returned status {resp.status_code}")
-            return []
+    content = ""
+    for attempt in range(2):
+        try:
+            s = cffi_requests.Session()
+            resp = s.get(url, impersonate="safari15_5", timeout=12)
+            if resp.status_code == 200 and resp.text:
+                content = resp.text
+                break
+            else:
+                logger.warning(f"ForexFactory direct scrape returned status {resp.status_code} (attempt {attempt+1})")
+        except Exception as e:
+            if attempt == 0:
+                logger.debug(f"Retrying ForexFactory direct scrape after error: {e}")
+                continue
+            logger.warning(f"Error scraping direct ForexFactory news: {e}")
 
-        content = resp.text
+    if not content:
+        return []
+
+    try:
         matches = re.findall(r'data-items="([^"]+)"', content)
         stories_by_id = {}
 
@@ -462,7 +474,7 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
             if age_minutes > MAX_BREAKING_NEWS_AGE_MINUTES:
                 # Silently mark older news as seen without alerting or causing false delay
                 logger.info(f"Silently marking past news as seen ({age_minutes:.1f}m old): {art['title']}")
-                database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
+                database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"], impact=art.get("impact", ""), description=art.get("description", ""))
                 continue
         fresh_unseen.append(art)
 
@@ -476,7 +488,7 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
     if total_seen == 0 and len(fresh_unseen) > 1:
         logger.info(f"First-time news initialization: marking {len(fresh_unseen)-1} articles as seen.")
         for a in fresh_unseen[1:]:
-            database.mark_news_as_seen(a["news_id"], a["title"], a["link"], a["pub_date"])
+            database.mark_news_as_seen(a["news_id"], a["title"], a["link"], a["pub_date"], impact=a.get("impact", ""), description=a.get("description", ""))
         fresh_unseen = fresh_unseen[:1]
 
     processed_count = 0
@@ -484,7 +496,7 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
         # Pre-filter: If ForexFactory explicitly marked impact as 'low', skip silently
         if art.get("impact") == "low":
             logger.info(f"Skipping ForexFactory explicit Low-impact news: {art['title']}")
-            database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
+            database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"], impact=art.get("impact", ""), description=art.get("description", ""))
             continue
 
         logger.info(f"Analyzing fresh breaking Forex story: {art['title']} (Source: {art['source']})")
@@ -493,7 +505,7 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
         # Strict Filter: ONLY High and Medium impact news are sent to Telegram!
         if is_low_impact_analysis(analysis):
             logger.info(f"Filtered out low-impact / non-direct news from instant alert: {art['title']}")
-            database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
+            database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"], impact=art.get("impact", ""), description=art.get("description", ""))
             continue
 
         # Format and dispatch High/Medium Impact Alert immediately
@@ -516,7 +528,7 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
             send_telegram_direct(alert_msg)
 
         logger.info(f"⚡ Instant High/Medium impact Telegram alert dispatched for: {art['title']}")
-        database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
+        database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"], impact=art.get("impact", ""), description=art.get("description", ""))
         processed_count += 1
 
     return processed_count

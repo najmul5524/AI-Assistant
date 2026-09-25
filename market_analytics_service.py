@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 from typing import Dict, Any, List, Optional, Tuple
 
 from config import DEFAULT_TIMEZONE
+import database
 import technical_analysis_service as ta_service
 import forex_news_monitor
 import forex_service
@@ -160,28 +161,58 @@ def fetch_asset_forexfactory_news(category: str, currency: str, limit: int = 8) 
 
     matched = []
     seen = set()
-    try:
-        stories = forex_news_monitor.fetch_forexfactory_direct_news(limit=60)
-        for s in stories:
-            t_lower = s["title"].lower()
-            d_lower = s.get("description", "").lower()
+    all_candidates = []
 
-            is_match = any(k in t_lower or k in d_lower for k in keywords)
-            if is_match:
-                norm = t_lower.strip()
-                if norm not in seen:
-                    seen.add(norm)
-                    impact = s.get("impact", "").strip().lower()
-                    impact_label = "🔴 HIGH" if impact == "high" else ("🟠 MEDIUM" if impact == "medium" else ("🟡 LOW" if impact == "low" else "NORMAL"))
-                    matched.append({
-                        "title": s["title"],
-                        "impact_label": impact_label,
-                        "pub_date_dhaka": s.get("pub_date_dhaka", ""),
-                        "published_dt": s.get("published_dt"),
-                        "source": s.get("source", "Forex Factory")
-                    })
+    # Tier 1: ForexFactory Direct Scraper
+    try:
+        direct = forex_news_monitor.fetch_forexfactory_direct_news(limit=60)
+        all_candidates.extend(direct)
     except Exception as e:
-        logger.warning(f"Error filtering ForexFactory news for {category}: {e}")
+        logger.warning(f"Tier 1 FF direct news fetch note: {e}")
+
+    # Tier 2: Multi-Feed Institutional Feeds (FXStreet, Investing.com)
+    try:
+        secondary = forex_news_monitor.fetch_latest_forex_news(limit=40)
+        all_candidates.extend(secondary)
+    except Exception as e:
+        logger.warning(f"Tier 2 multi-feed news fetch note: {e}")
+
+    # Tier 3: Persistent Database Cache
+    try:
+        cached = database.get_recent_seen_news(limit=60)
+        dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+        for c in cached:
+            dt_obj = forex_news_monitor.parse_article_date(c.get("published_at", ""))
+            pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y") if dt_obj else c.get("published_at", "")
+            all_candidates.append({
+                "title": c.get("title", ""),
+                "description": c.get("description", ""),
+                "impact": c.get("impact", ""),
+                "pub_date_dhaka": pub_dhaka,
+                "published_dt": dt_obj,
+                "source": "Forex Factory Archive"
+            })
+    except Exception as e:
+        logger.warning(f"Tier 3 cached news fetch note: {e}")
+
+    for s in all_candidates:
+        t_lower = s.get("title", "").lower()
+        d_lower = s.get("description", "").lower()
+
+        is_match = any(k in t_lower or k in d_lower for k in keywords)
+        if is_match:
+            norm = t_lower.strip()
+            if norm not in seen:
+                seen.add(norm)
+                impact = s.get("impact", "").strip().lower()
+                impact_label = "🔴 HIGH" if impact == "high" else ("🟠 MEDIUM" if impact == "medium" else ("🟡 LOW" if impact == "low" else "NORMAL"))
+                matched.append({
+                    "title": s["title"],
+                    "impact_label": impact_label,
+                    "pub_date_dhaka": s.get("pub_date_dhaka", ""),
+                    "published_dt": s.get("published_dt"),
+                    "source": s.get("source", "Forex Factory")
+                })
 
     # Sort chronological
     matched.sort(

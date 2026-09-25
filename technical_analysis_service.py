@@ -56,6 +56,8 @@ SYMBOL_MAP = {
     # US Indices - Dow Jones 30
     "dow": ("YM=F", "Dow Jones Futures"),
     "dowjones": ("YM=F", "Dow Jones Futures"),
+    "dowjonson": ("YM=F", "Dow Jones Futures"),
+    "dowjohnson": ("YM=F", "Dow Jones Futures"),
     "us30": ("YM=F", "Dow Jones (US30)"),
     "ym": ("YM=F", "Dow Jones Futures"),
     "dji": ("YM=F", "Dow Jones Futures"),
@@ -100,6 +102,7 @@ SYMBOL_MAP = {
     "btcusd": ("BTC-USD", "Bitcoin (BTC/USD)"),
     "eth": ("ETH-USD", "Ethereum (ETH/USD)"),
     "ethereum": ("ETH-USD", "Ethereum (ETH/USD)"),
+    "etherium": ("ETH-USD", "Ethereum (ETH/USD)"),
     "ethusd": ("ETH-USD", "Ethereum (ETH/USD)"),
     "sol": ("SOL-USD", "Solana (SOL/USD)"),
     "solana": ("SOL-USD", "Solana (SOL/USD)"),

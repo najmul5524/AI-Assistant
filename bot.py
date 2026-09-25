@@ -47,6 +47,7 @@ import forex_news_monitor
 import forex_digest_service
 import technical_analysis_service
 import oil_analytics_service
+import market_analytics_service
 import voice_service
 from llm_manager import MultiTierLLMManager
 
@@ -168,7 +169,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🎙️ **ভয়েস মেসেজ সাপোর্ট:** আপনি চাইলে টাইপ না করে টেলিগ্রামে সরাসরি বাংলায় মুখে কথা বলে ভয়েস পাঠাতে পারেন! আমি আপনার কথা শুনে সাথে সাথে কাজ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
         f"• `/ta [সিম্বল] [টাইমফ্রেম]` - লাইভ ক্যান্ডেলের নিখুঁত ব্যবচ্ছেদ (Dissection), ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল (যেমন `/ta gold`, `/ta btc 5m`)\n"
-        f"• `/oil` - ক্রুড অয়েলের (WTI & Brent) খবরের পর্যায়ক্রমিক ধারা ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন\n"
+        f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd` - লাইভ টেকনিক্যাল ডেটা, পর্যায়ক্রমিক খবরের গতিপথ ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন\n"
         f"• `/forecast` - আগামীকালের গোল্ড, মেটাল, ফিউচার্স ও ফরেক্স প্রাইস মুভমেন্ট পূর্বাভাস\n"
         f"• `/digest` - দৈনিক একীভূত ম্যাক্রো ডাইজেস্ট ও সেন্টিমেন্ট\n"
         f"• `/forex_pdf` - সাপ্তাহিক প্রাতিষ্ঠানিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট\n"
@@ -196,12 +197,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
-        f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা টেকনিক্যাল বিশ্লেষণ সরাসরি বাংলায় লিখে চান (যেমন: *'গোল্ডের ক্যান্ডেল ব্যবচ্ছেদ কর'*, *'BTC 15m সিগনাল দাও'*)।\n"
+        f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা টেকনিক্যাল বিশ্লেষণ সরাসরি বাংলায় লিখে চান (যেমন: *'গোল্ডের ক্যান্ডেল ব্যবচ্ছেদ কর'*, *'BTC 15m সিগনাল দাও'*, *'Nasdaq prediction'*, *'S&P 500 এনালাইসিস'*)\n"
         f"• `/ta [সিম্বল] [টাইমফ্রেম]` বা `/signal`: ক্যান্ডেলস্টিকের মাইক্রোস্কোপিক ব্যবচ্ছেদ (Anatomy Breakdown), সময়ের সাথে ক্যান্ডেল কিভাবে তৈরি হলো (ইন্ট্রা-ক্যান্ডেল গঠনপ্রক্রিয়া), পূর্ববর্তী High/Low সুইপ বনাম ব্রেকআউট এবং এন্ট্রি, স্টপ লস ও টেক প্রফিটসহ হাই-কনভিকশন সিগন্যাল। (উদাহরণ: `/ta`, `/ta btc`, `/ta gold 5m`, `/ta eurusd 1h`)\n"
+        f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd`: বর্তমান বাজার পরিস্থিতি, লাইভ টেকনিক্যাল মেট্রিক্স (RSI, EMA, ATR), খবরের কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory) ও প্রাতিষ্ঠানিক শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন।\n"
         f"• `/forecast` বা `/prediction` বা `/digest`: সারাদিনের সমস্ত নিউজ, গোল্ড (Gold), সিলভার (Silver), ফিউচার্স (S&P 500, Crude Oil) ও X.com সেন্টিমেন্ট বিশ্লেষণ করে আগামীকালের বিস্তারিত প্রাইস মুভমেন্ট পূর্বাভাস।\n"
         f"• `/forex_pdf`: সরাসরি পূর্ণাঙ্গ প্রাতিষ্ঠানিক সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট তৈরি ও ডাউনলোড।\n"
-        f"• `/oil`: ক্রুড অয়েল (WTI ও Brent)-এর খবরের পর্যায়ক্রমিক ধারা, লাইভ টেকনিক্যাল ডেটা ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন।\n"
-        f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)। (`/news oil` দিয়েও অয়েলের প্রেডিকশন পাওয়া যাবে)\n"
+        f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)। (`/news gold` বা `/news oil` দিয়েও নির্দিষ্ট অ্যাসেটের প্রেডিকশন পাওয়া যাবে)\n"
         f"• `/forex`: আজকের High & Medium Impact ফরেক্স ক্যালেন্ডার নিউজ দেখা। (`/forex all` দিয়ে পুরো সপ্তাহেরটা দেখা যাবে)\n"
         f"• `/forex_sync`: আজকের ফরেক্স নিউজ Google Calendar-এ রিমাইন্ডার অ্যালার্টসহ স্বয়ংক্রিয়ভাবে সিঙ্ক করা।\n"
         f"• `/report <বিষয়>`: যেমন `/report এআই ও ভবিষ্যৎ চাকরি বাজার` (পিডিএফ তৈরি হবে)\n"
@@ -519,10 +520,21 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await unauthorized_reply(update)
         return
 
-    # If user provided argument e.g. /news oil, /news crude, route to sequential oil analysis
-    if context.args and any(arg.lower() in ["oil", "crude", "wti", "brent", "তেল", "পেট্রোলিয়াম"] for arg in context.args):
-        await oil_command(update, context)
-        return
+    # If user provided argument e.g. /news oil, /news crude, /news gold, route to sequential analysis
+    if context.args:
+        arg_str = " ".join(context.args).lower().strip()
+        if any(arg in arg_str for arg in ["oil", "crude", "wti", "brent", "তেল", "পেট্রোলিয়াম"]):
+            await oil_command(update, context)
+            return
+        asset_check = [
+            "gold", "xau", "silver", "xag", "nasdaq", "us100", "nq", "ndx",
+            "sp500", "spx", "us500", "es", "s&p", "dow", "us30", "ym", "dji",
+            "btc", "bitcoin", "eth", "ethereum", "etherium",
+            "eur", "gbp", "jpy", "aud", "cad", "chf", "dxy", "ডলার", "সোনা", "গোল্ড"
+        ]
+        if any(k in arg_str for k in asset_check):
+            await market_command(update, context)
+            return
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     status_msg = await update.message.reply_text("⏳ Forex Factory থেকে সর্বশেষ ব্রেকিং নিউজ সংগ্রহ ও এআই এনালাইসিস করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
@@ -571,6 +583,58 @@ async def oil_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error generating oil prediction report: {e}")
         await update.message.reply_text(f"❌ তেলের পর্যায়ক্রমিক এনালাইসিস সম্পন্ন করার সময় ত্রুটি ঘটেছে: {e}")
+
+async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle universal multi-asset sequential news analysis, live prices, and short/long-term movement predictions.
+    Supports /market, /gold, /nasdaq, /sp500, /dow, /btc, /eth, /eurusd, and any major pair/commodity.
+    """
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    # Determine asset query
+    cmd_name = ""
+    if update.message and update.message.text:
+        first_token = update.message.text.split()[0].lower()
+        if first_token.startswith("/"):
+            cmd_name = first_token[1:].split("@")[0]
+
+    query = ""
+    if cmd_name and cmd_name not in ["market", "analyze", "news"]:
+        query = cmd_name
+    elif context.args:
+        query = " ".join(context.args).strip()
+    else:
+        query = "gold"
+
+    profile = market_analytics_service.get_asset_profile(query)
+    asset_name = profile["name"]
+    ticker = profile["ticker"]
+    category = profile["category"]
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    status_msg = await update.message.reply_text(
+        f"📊 *{asset_name} ({ticker}) মার্কেট ইন্টেলিজেন্স ও প্রেডিকশন*\n\n"
+        f"⏳ লাইভ মার্কেট টেকনিক্যাল মেট্রিক্স, ForexFactory ব্রেকিং হেডলাইন ও ম্যাক্রো ইভেন্ট বিশ্লেষণ করে বিশদ প্রতিবেদন প্রস্তুত করা হচ্ছে...",
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+    try:
+        loop = asyncio.get_running_loop()
+        if category == "oil":
+            report = await loop.run_in_executor(None, oil_analytics_service.generate_oil_prediction_analysis)
+        else:
+            report = await loop.run_in_executor(None, market_analytics_service.generate_asset_prediction_analysis, query)
+
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+        await send_split_message(context.bot, update.effective_chat.id, report, parse_mode=ParseMode.MARKDOWN)
+    except Exception as e:
+        logger.error(f"Error generating market prediction report for {asset_name}: {e}")
+        await update.message.reply_text(f"❌ {asset_name}-এর পর্যায়ক্রমিক এনালাইসিস সম্পন্ন করার সময় ত্রুটি ঘটেছে: {e}")
 
 async def send_split_message(bot, chat_id: int, text: str, parse_mode=ParseMode.MARKDOWN):
     """Safely dispatches long messages, splitting into clean sections if exceeding Telegram limit."""
@@ -1003,6 +1067,36 @@ async def process_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         database.add_message(user.id, "assistant", "[Crude Oil Sequential News & Prediction Report displayed]")
         return
 
+    # Check for natural language multi-asset sequential news & prediction triggers (Gold, Nasdaq, S&P 500, Dow Jones, Crypto, Forex)
+    market_asset_map = [
+        ("gold", ["gold", "সোনা", "সোনার", "গোল্ড", "xau"]),
+        ("silver", ["silver", "সিলভার", "রূপা", "xag"]),
+        ("nasdaq", ["nasdaq", "ন্যাশডাক", "us100", "nq", "ndx"]),
+        ("sp500", ["sp500", "s&p500", "s&p 500", "s&p", "us500", "spx", "es"]),
+        ("dow", ["dow jones", "dow jonson", "dow", "ডাউ", "us30", "ym", "dji"]),
+        ("btc", ["bitcoin", "বিটকয়েন", "btc"]),
+        ("eth", ["ethereum", "etherium", "ইথেরিয়াম", "eth"]),
+        ("eurusd", ["eurusd", "eur/usd", "ইউরো"]),
+        ("gbpusd", ["gbpusd", "gbp/usd", "পাউন্ড"]),
+        ("usdjpy", ["usdjpy", "usd/jpy", "ইয়েন", "yen"]),
+        ("audusd", ["audusd", "aud/usd"]),
+        ("usdcad", ["usdcad", "usd/cad"]),
+        ("usdchf", ["usdchf", "usd/chf"]),
+        ("dxy", ["dxy", "dollar index", "ডলার ইনডেক্স"]),
+    ]
+    multi_asset_analysis_terms = [
+        "পর্যায়ক্রমিক", "মুভমেন্ট", "প্রেডিকশন", "পূর্বাভাস", "short term", "long term",
+        "prediction", "analysis", "এনালাইসিস", "বিশ্লেষণ", "রিপোর্ট", "আউটলুক", "outlook",
+        "পরিস্থিতি", "বাজার পরিস্থিতি", "মুভমেন্ট কেমন"
+    ]
+    for asset_key, kws in market_asset_map:
+        if any(k in lower_text for k in kws) and any(w in lower_text for w in multi_asset_analysis_terms):
+            context.args = [asset_key]
+            await market_command(update, context)
+            database.add_message(user.id, "user", text)
+            database.add_message(user.id, "assistant", f"[{asset_key.upper()} Sequential Market Intelligence Report displayed]")
+            return
+
     # Check for natural language breaking news & analysis triggers
     if any(k in lower_text for k in ["ব্রেকিং নিউজ", "breaking news", "news analysis", "নিউজ এনালাইসিস", "মার্কেট নিউজ", "ফরেক্স নিউজ এনালাইসিস", "লেটেস্ট নিউজ"]):
         await news_command(update, context)
@@ -1356,6 +1450,36 @@ def main():
     app.add_handler(CommandHandler("crudeoil", oil_command))
     app.add_handler(CommandHandler("wti", oil_command))
     app.add_handler(CommandHandler("brent", oil_command))
+    app.add_handler(CommandHandler("market", market_command))
+    app.add_handler(CommandHandler("gold", market_command))
+    app.add_handler(CommandHandler("xau", market_command))
+    app.add_handler(CommandHandler("silver", market_command))
+    app.add_handler(CommandHandler("xag", market_command))
+    app.add_handler(CommandHandler("nasdaq", market_command))
+    app.add_handler(CommandHandler("us100", market_command))
+    app.add_handler(CommandHandler("nq", market_command))
+    app.add_handler(CommandHandler("ndx", market_command))
+    app.add_handler(CommandHandler("sp500", market_command))
+    app.add_handler(CommandHandler("us500", market_command))
+    app.add_handler(CommandHandler("spx", market_command))
+    app.add_handler(CommandHandler("es", market_command))
+    app.add_handler(CommandHandler("dow", market_command))
+    app.add_handler(CommandHandler("dowjones", market_command))
+    app.add_handler(CommandHandler("dowjonson", market_command))
+    app.add_handler(CommandHandler("us30", market_command))
+    app.add_handler(CommandHandler("ym", market_command))
+    app.add_handler(CommandHandler("btc", market_command))
+    app.add_handler(CommandHandler("bitcoin", market_command))
+    app.add_handler(CommandHandler("eth", market_command))
+    app.add_handler(CommandHandler("ethereum", market_command))
+    app.add_handler(CommandHandler("etherium", market_command))
+    app.add_handler(CommandHandler("eurusd", market_command))
+    app.add_handler(CommandHandler("gbpusd", market_command))
+    app.add_handler(CommandHandler("usdjpy", market_command))
+    app.add_handler(CommandHandler("audusd", market_command))
+    app.add_handler(CommandHandler("usdcad", market_command))
+    app.add_handler(CommandHandler("usdchf", market_command))
+    app.add_handler(CommandHandler("dxy", market_command))
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("forecast", digest_command))
     app.add_handler(CommandHandler("prediction", digest_command))

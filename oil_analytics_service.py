@@ -129,6 +129,25 @@ def fetch_forexfactory_oil_stories(limit: int = 35) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Tier 1 FF direct news fetch note: {e}")
 
+    # Tier 1.5: ForexFactory 7-Day Indexed Archive (Ensures yesterday's and older breaking news is NEVER lost)
+    try:
+        indexed_ff = forex_news_monitor.fetch_forexfactory_indexed_news(keyword="oil OR Hormuz OR crude OR Iran", limit=40)
+        all_candidates.extend(indexed_ff)
+        for ind in indexed_ff:
+            try:
+                database.mark_news_as_seen(
+                    ind.get("news_id", forex_news_monitor.generate_news_id(ind["title"])),
+                    ind["title"],
+                    ind.get("link", ""),
+                    ind.get("pub_date", ""),
+                    impact=ind.get("impact", ""),
+                    description=ind.get("description", "")
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Tier 1.5 FF indexed archive fetch note: {e}")
+
     # Tier 2: Secondary Feeds (FXStreet, Investing.com)
     try:
         secondary = forex_news_monitor.fetch_latest_forex_news(limit=40)

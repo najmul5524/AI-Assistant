@@ -221,6 +221,107 @@ def fetch_forexfactory_direct_news(limit: int = 50) -> List[Dict[str, Any]]:
     )
     return articles[:limit]
 
+def fetch_forexfactory_indexed_news(keyword: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """
+    Scrapes 7-day archived & breaking news published on ForexFactory using Google News RSS indexing with curl_cffi.
+    This guarantees that older stories from yesterday and the past 7 days that rolled off the front page
+    are NEVER lost, preserving critical breaking news (e.g. US-Iran Hormuz diplomacy, OPEC, Fed).
+    """
+    dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+    articles = []
+    seen = set()
+
+    queries = []
+    if keyword:
+        clean_kw = keyword.replace(" ", "+")
+        queries.append(f"site:forexfactory.com+{clean_kw}+when:7d")
+        queries.append(f"site:forexfactory.com+{clean_kw}")
+    queries.append("site:forexfactory.com+when:7d")
+
+    session = None
+    if cffi_requests is not None:
+        try:
+            session = cffi_requests.Session()
+        except Exception:
+            session = None
+
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+    for q in queries:
+        url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+        content = None
+        for attempt in range(2):
+            try:
+                if session is not None:
+                    resp = session.get(url, impersonate="safari15_5", timeout=10)
+                else:
+                    resp = requests.get(url, headers=headers, timeout=10)
+                if resp.status_code == 200 and resp.text:
+                    content = resp.content
+                    break
+            except Exception as e:
+                logger.debug(f"Attempt {attempt+1} error fetching FF indexed news '{q}': {e}")
+
+        if not content:
+            continue
+
+        try:
+            root = ET.fromstring(content)
+            for item in root.findall(".//item"):
+                title_el = item.find("title")
+                pub_date_el = item.find("pubDate")
+                link_el = item.find("link")
+                if title_el is None or not title_el.text:
+                    continue
+
+                raw_title = html_lib.unescape(title_el.text).strip()
+                clean_title = re.sub(r'\s*-\s*Forex Factory.*$', '', raw_title, flags=re.IGNORECASE).strip()
+                clean_title = clean_title.lstrip('*').strip()
+
+                norm = clean_title.lower()
+                if norm in seen or len(clean_title) < 5:
+                    continue
+                seen.add(norm)
+
+                pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
+                dt_obj = parse_article_date(pub_str)
+                pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y") if dt_obj else pub_str
+                story_url = link_el.text.strip() if link_el is not None and link_el.text else ""
+
+                # Auto-assign impact level: High for major market moving catalysts, Medium for others
+                is_high = any(k in norm for k in [
+                    "war", "truce", "ceasefire", "strike", "attack", "missile", "drone",
+                    "sanction", "emergency", "crisis", "surge", "plunge", "record high",
+                    "record low", "all-time high", "all time high", "crash", "rally", "fed",
+                    "powell", "fomc", "rate cut", "rate hike", "interest rate", "inflation",
+                    "cpi", "pce", "recession", "tariff", "trade war", "gdp", "nfp", "jobs report",
+                    "opec", "hormuz", "blockade", "reopen", "deal", "sec", "liquidation", "bailout",
+                    "yield curve", "debt ceiling", "default", "central bank", "stimulus", "diesel export"
+                ])
+                impact_val = "high" if is_high else "medium"
+
+                articles.append({
+                    "news_id": generate_news_id(clean_title),
+                    "title": clean_title,
+                    "link": story_url,
+                    "pub_date": pub_str,
+                    "pub_date_dhaka": pub_dhaka,
+                    "published_dt": dt_obj,
+                    "description": "",
+                    "source": "Forex Factory",
+                    "impact": impact_val,
+                    "is_forexfactory": True
+                })
+        except Exception as e:
+            logger.debug(f"Error parsing XML for '{q}': {e}")
+
+    # Sort strictly newest first
+    articles.sort(
+        key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+        reverse=True
+    )
+    return articles[:limit]
+
 def fetch_latest_forex_news(limit: int = 35) -> List[Dict[str, Any]]:
     """
     Fetch breaking news articles.

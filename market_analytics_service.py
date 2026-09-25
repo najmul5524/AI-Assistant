@@ -184,6 +184,34 @@ def fetch_asset_forexfactory_news(category: str, currency: str = "USD", limit: i
     except Exception as e:
         logger.warning(f"Tier 1 FF direct news fetch note: {e}")
 
+    # Tier 1.5: ForexFactory 7-Day Indexed Archive (Ensures yesterday's and older breaking news is NEVER lost)
+    try:
+        ff_search_terms = {
+            "oil": "oil OR crude OR Hormuz OR OPEC",
+            "gold": "gold OR XAU OR precious",
+            "silver": "silver OR XAG",
+            "indices": "Nasdaq OR stocks OR S&P OR Dow",
+            "crypto": "Bitcoin OR crypto OR Ethereum OR BTC",
+            "forex": f"{currency} OR Fed OR central bank"
+        }
+        search_kw = ff_search_terms.get(category, f"{category} OR {currency}")
+        indexed_ff = forex_news_monitor.fetch_forexfactory_indexed_news(keyword=search_kw, limit=40)
+        all_candidates.extend(indexed_ff)
+        for ind in indexed_ff:
+            try:
+                database.mark_news_as_seen(
+                    ind.get("news_id", forex_news_monitor.generate_news_id(ind["title"])),
+                    ind["title"],
+                    ind.get("link", ""),
+                    ind.get("pub_date", ""),
+                    impact=ind.get("impact", ""),
+                    description=ind.get("description", "")
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Tier 1.5 FF indexed news fetch note: {e}")
+
     # Tier 2: Multi-Feed Institutional Feeds (FXStreet, Investing.com)
     try:
         secondary = forex_news_monitor.fetch_latest_forex_news(limit=40)

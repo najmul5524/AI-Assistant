@@ -1324,9 +1324,9 @@ def main():
         app.job_queue.run_repeating(check_scheduled_reminders, interval=15, first=5)
         print("⏰ Reminder scheduler activated (running every 15s).")
 
-        # Register 24/7 Forex Factory Breaking News Monitor (runs every FOREX_NEWS_CHECK_INTERVAL seconds)
+        # Register 24/7 Real-time Breaking News Monitor (runs every FOREX_NEWS_CHECK_INTERVAL seconds)
         app.job_queue.run_repeating(scheduled_news_monitor_job, interval=FOREX_NEWS_CHECK_INTERVAL, first=15)
-        print(f"📡 24/7 Forex News Monitor activated (checking every {FOREX_NEWS_CHECK_INTERVAL}s / {FOREX_NEWS_CHECK_INTERVAL // 60}m).")
+        print(f"📡 24/7 Real-Time Forex News Monitor activated (checking every {FOREX_NEWS_CHECK_INTERVAL}s).")
 
         # Register 15-minute high conviction intraday scanner
         app.job_queue.run_repeating(scheduled_technical_scanner_job, interval=900, first=45)

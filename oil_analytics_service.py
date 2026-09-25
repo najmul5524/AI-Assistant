@@ -174,57 +174,83 @@ def fetch_forexfactory_oil_stories(limit: int = 10) -> List[Dict[str, Any]]:
     )
     return matched[-limit:]
 
-def fetch_forexfactory_energy_calendar() -> List[Dict[str, Any]]:
+def fetch_forexfactory_energy_calendar() -> Dict[str, List[Dict[str, Any]]]:
     """
     Extracts raw energy events (EIA Crude Oil Inventories, API, Natural Gas Storage)
-    directly from ForexFactory calendar cache.
+    directly from ForexFactory calendar cache, separating into recent releases and upcoming catalysts in BST.
     """
-    matched = []
+    recent = []
+    upcoming = []
     try:
         raw_events = forex_service.fetch_raw_calendar()
         dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         for e in raw_events:
             title = e.get("title", "")
             t_lower = title.lower()
             if any(k in t_lower for k in ["oil", "crude", "inventor", "natural gas", "petroleum", "api"]):
-                # Parse date to BST
                 date_raw = e.get("date", "")
-                dt_obj = forex_news_monitor.parse_article_date(date_raw)
-                dhaka_time = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y") if dt_obj else date_raw
-                matched.append({
+                dt_obj = None
+                if date_raw:
+                    try:
+                        dt_obj = datetime.datetime.fromisoformat(date_raw)
+                    except Exception:
+                        dt_obj = forex_news_monitor.parse_article_date(date_raw)
+
+                if dt_obj:
+                    dhaka_time = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)")
+                    is_future = dt_obj > now_utc
+                else:
+                    dhaka_time = date_raw
+                    is_future = False
+
+                item_dict = {
                     "title": title,
                     "country": e.get("country", "USD"),
                     "impact": e.get("impact", "Medium"),
                     "actual": e.get("actual") or "N/A",
                     "forecast": e.get("forecast") or "N/A",
                     "previous": e.get("previous") or "N/A",
-                    "time_dhaka": dhaka_time
-                })
+                    "time_dhaka": dhaka_time,
+                    "dt": dt_obj
+                }
+
+                if is_future:
+                    upcoming.append(item_dict)
+                else:
+                    recent.append(item_dict)
     except Exception as e:
         logger.warning(f"Error fetching energy calendar events: {e}")
 
-    return matched
+    upcoming.sort(key=lambda x: x["dt"] or datetime.datetime.max.replace(tzinfo=datetime.timezone.utc))
+    recent.sort(key=lambda x: x["dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc), reverse=True)
 
-def fetch_global_oil_wire_news(limit: int = 8) -> List[Dict[str, Any]]:
+    return {
+        "recent": recent[:6],
+        "upcoming": upcoming[:6]
+    }
+
+def fetch_global_oil_wire_news(limit: int = 12) -> List[Dict[str, Any]]:
     """
-    Fetches strictly fresh (last 72h via when:3d) oil commodity wire articles
-    from Google News RSS.
+    Fetches oil commodity wire articles across:
+    1. Past 7 days (when:7d) for recent market price action and catalysts
+    2. Past 30 days (when:30d) for structural supply/demand and geopolitical policies still actively anchoring the trend
     """
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     articles = []
     seen = set()
 
     search_queries = [
-        "crude+oil+WTI+Brent+when:3d",
-        "oil+price+Hormuz+Iran+when:3d"
+        "crude+oil+price+news+when:7d",
+        "crude+oil+OPEC+Iran+when:30d"
     ]
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
     for q in search_queries:
         try:
             url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            resp = requests.get(url, headers=headers, timeout=6)
+            resp = requests.get(url, headers=headers, timeout=8)
             if resp.status_code == 200 and resp.text:
                 root = ET.fromstring(resp.content)
                 for item in root.findall(".//item"):
@@ -241,7 +267,7 @@ def fetch_global_oil_wire_news(limit: int = 8) -> List[Dict[str, Any]]:
 
                     pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
                     dt_obj = forex_news_monitor.parse_article_date(pub_str)
-                    pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y") if dt_obj else pub_str
+                    pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)") if dt_obj else pub_str
 
                     source_name = "Commodity Wire"
                     if " - " in raw_title:
@@ -260,10 +286,9 @@ def fetch_global_oil_wire_news(limit: int = 8) -> List[Dict[str, Any]]:
         except Exception as e:
             logger.debug(f"Google news query '{q}' note: {e}")
 
-    # Sort chronological
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     articles.sort(
-        key=lambda x: x["published_dt"] or (now_utc - datetime.timedelta(days=3)),
+        key=lambda x: x["published_dt"] or (now_utc - datetime.timedelta(days=30)),
         reverse=False
     )
     return articles[-limit:]
@@ -285,13 +310,15 @@ def fetch_chronological_oil_news(max_items: int = 15) -> List[Dict[str, Any]]:
 def generate_oil_prediction_analysis() -> str:
     """
     Synthesizes live technical market prices (WTI & Brent), ForexFactory Direct Breaking News,
-    ForexFactory Economic Calendar (Inventories), and Live Commodity Wire
+    ForexFactory Economic Calendar (Inventories - past & upcoming in BST), and Live Commodity Wire (7-30 days)
     into a comprehensive Short-Term and Long-Term movement prediction.
     """
     metrics = fetch_oil_market_metrics()
     ff_stories = fetch_forexfactory_oil_stories(limit=10)
-    calendar_events = fetch_forexfactory_energy_calendar()
-    wire_news = fetch_global_oil_wire_news(limit=8)
+    cal_data = fetch_forexfactory_energy_calendar()
+    recent_cal = cal_data.get("recent", [])
+    upcoming_cal = cal_data.get("upcoming", [])
+    wire_news = fetch_global_oil_wire_news(limit=12)
 
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     dhaka_now = datetime.datetime.now(dhaka_tz).strftime("%I:%M %p, %d %B %Y (%A)")
@@ -308,17 +335,22 @@ def generate_oil_prediction_analysis() -> str:
         ff_lines.append(f"• [{it['pub_date_dhaka']}] [{it['impact_label']}] ({it['source']}) {it['title']}")
     ff_feed = "\n".join(ff_lines) if ff_lines else "ForexFactory breaking stories active."
 
-    # 3. ForexFactory Calendar (Inventories)
-    cal_lines = []
-    for c in calendar_events:
-        cal_lines.append(f"• [{c['time_dhaka']}] {c['country']} - {c['title']} | Actual: {c['actual']} | Forecast: {c['forecast']} | Previous: {c['previous']}")
-    cal_feed = "\n".join(cal_lines) if cal_lines else "Weekly inventory reports active."
+    # 3. ForexFactory Calendar (Inventories - Recent & Upcoming)
+    recent_cal_lines = []
+    for c in recent_cal:
+        recent_cal_lines.append(f"• [{c['time_dhaka']}] {c['country']} - {c['title']} | Actual: {c['actual']} | Forecast: {c['forecast']} | Previous: {c['previous']}")
+    recent_cal_feed = "\n".join(recent_cal_lines) if recent_cal_lines else "Weekly inventory reports active."
+
+    upcoming_cal_lines = []
+    for u in upcoming_cal:
+        upcoming_cal_lines.append(f"• [{u['time_dhaka']}] [🔴 {u['impact'].upper()}] {u['country']} - {u['title']} | Forecast: {u['forecast']} | Previous: {u['previous']}")
+    upcoming_cal_feed = "\n".join(upcoming_cal_lines) if upcoming_cal_lines else "Upcoming scheduled inventory catalysts active."
 
     # 4. Commodity Wire Dispatches
     wire_lines = []
     for w in wire_news:
         wire_lines.append(f"• [{w['pub_date_dhaka']}] ({w['source']}) {w['title']}")
-    wire_feed = "\n".join(wire_lines) if wire_lines else "Global wire dispatches active."
+    wire_feed_30d = "\n".join(wire_lines) if wire_lines else "Global wire dispatches (7–30 days) active."
 
     prompt = f"""You are the Chief Global Commodities Strategist & Senior Energy Macro Analyst at a top Wall Street institutional trading desk.
 Current Bangladesh Time: {dhaka_now} (BST / GMT+6).
@@ -330,49 +362,65 @@ LIVE OIL MARKET TECHNICAL DATA:
 FOREX FACTORY DIRECT BREAKING NEWS & GEOPOLITICAL HEADLINES (INCLUDING HIGH & MEDIUM IMPACT):
 {ff_feed}
 
-FOREX FACTORY ECONOMIC CALENDAR (ENERGY INVENTORIES & SUPPLY DATA):
-{cal_feed}
+FOREX FACTORY ECONOMIC CALENDAR (RECENT INVENTORIES & SUPPLY RELEASES):
+{recent_cal_feed}
 
-GLOBAL COMMODITY WIRE DISPATCHES (LAST 72 HOURS):
-{wire_feed}
+FOREX FACTORY ECONOMIC CALENDAR (UPCOMING SCHEDULED HIGH-IMPACT ENERGY CATALYSTS - IN BST):
+{upcoming_cal_feed}
+
+GLOBAL COMMODITY WIRE DISPATCHES (PAST 7 TO 30 DAYS MACRO SPECTRUM):
+{wire_feed_30d}
 
 CRITICAL TASK & INSTRUCTIONS:
 Provide a robust, comprehensive, institutional movement prediction for Crude Oil (WTI & Brent) in professional, fluent Bengali.
-Ensure that Section 2 ("ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ") dynamically and chronologically analyzes the real-world live events provided in the sections above (ForexFactory Breaking News, Economic Calendar, and Commodity Wire):
-1. Synthesize the latest ForexFactory High & Medium Impact headlines (e.g. geopolitical developments, OPEC+ decisions, supply chain or maritime disruptions) and how they impact war risk premiums and current price fluctuations.
-2. Incorporate the latest ForexFactory Economic Calendar releases (specifically EIA/API crude oil and petroleum inventory draws/builds).
-3. Connect the latest global commodity wire dispatches to explain the chain reaction from structural macro backdrop to immediate market momentum.
-4. If specific high/medium impact headlines or inventory reports appear in the live data blocks above, explicitly cite their actual titles, impact ratings (🔴 HIGH / 🟠 MEDIUM), and timestamps as recorded in the live feed.
-5. NEVER state that there were no breaking headlines recorded; always analyze the active catalysts and market forces provided in the live data blocks above.
+Ensure that:
+1. Data Horizon: Synthesize active macro & market catalysts from the past 7 to 30 days (such as geopolitical premiums, Hormuz naval developments, OPEC+ production policies, and US refining actions) whose impact is still actively anchoring the current trend.
+2. Time Horizon Definitions: Clearly define the exact time horizon for Short-Term (১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ) and Long-Term (২ সপ্তাহ থেকে ১–৩ মাস / Q4).
+3. Catalyst Impact Expiry & Next Update Schedule: For every key news item or catalyst analyzed in Section 2, explicitly state:
+   - কখন বা কতদিন পর এর প্রভাব শেষ/স্তিমিত হবে (Impact Expiry Horizon)
+   - এই সংক্রান্ত পরবর্তী ফলো-আপ ডেটা, অফিশিয়াল মিটিং বা ইনভেন্টরি পরিসংখ্যান আবার বাংলাদেশ সময় কবে প্রকাশ পাবে (Next Follow-up / Recurrence Schedule).
+4. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
+5. All times must strictly be in Bangladesh Time (BST / GMT+6).
+6. NEVER state that there were no breaking headlines recorded; synthesize the active catalysts and market forces provided in the live data blocks above.
 
 ### EXACT REPORT STRUCTURE:
 
 1. 🛢️ **তেল বাজারের বর্তমান অবস্থা ও লাইভ স্ন্যাপশট (Live Market Snapshot):**
    - WTI এবং Brent-এর বর্তমান লাইভ প্রাইস, দৈনিক পরিবর্তন (Change %), ডে হাই/লো এবং টেকনিক্যাল মোমেন্টাম (RSI, EMA20 এবং ATR ভোলাটিলিটি)।
 
-2. ⏳ **ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory):**
-   - লাইভ ডেটা ফিডে প্রাপ্ত সাম্প্রতিক খবরের ধারাবাহিকতায় তেলের সেন্টিমেন্ট ও প্রাইস অ্যাকশন কীভাবে গঠিত হয়েছে তার বাস্তবসম্মত কালানুক্রমিক বিবরণ:
-     * **ধাপ ১ (ম্যাক্রো পটভূমি ও কাঠামোগত সরবরাহ-চাহিদা ভিত্তি):** বৈশ্বিক তেলের চাহিদা, ওপেক প্লাস নীতি ও ভূ-রাজনৈতিক ঝুঁকির প্রাথমিক প্রেক্ষাপট।
-     * **ধাপ ২ (ফরেক্সফ্যাক্টরি হাই/মিডিয়াম ইমপ্যাক্ট ব্রেকিং নিউজ ও ভূ-রাজনীতি):** লাইভ ফিডে থাকা সাম্প্রতিকতম হাই/মিডিয়াম ইমপ্যাক্ট ব্রেকিং খবরের তাৎক্ষণিক প্রভাব (খবরের শিরোনাম, সময় ও ইমপ্যাক্ট উল্লেখ করে)।
-     * **ধাপ ৩ (ইনভেন্টরি ও সাপ্লাই চেইন ক্যাটালাইস্ট):** ফরেক্সফ্যাক্টরি ক্যালেন্ডারের ইআইএ (EIA) বা এপিআই (API) ইনভেন্টরি ডেটা এবং রিফাইনারি/শিপিং পরিস্থিতির প্রতিফলন।
-     * **ধাপ ৪ (বর্তমান মার্কেট ট্রিগার ও প্রাইস অ্যাকশন মোমেন্টাম):** সর্বশেষ অনুঘটক ও খবরের ওপর ভিত্তি করে বর্তমান ট্রেডিং রেঞ্জের অবস্থা ও গতি।
+2. ⏳ **ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory - গত ৭ থেকে ৩০ দিনের সক্রিয় প্রভাবক):**
+   - লাইভ ডেটা ফিডে প্রাপ্ত সাম্প্রতিক ৭–৩০ দিনের খবরের ধারাবাহিকতায় তেলের সেন্টিমেন্ট ও প্রাইস অ্যাকশন কীভাবে গঠিত হয়েছে তার বাস্তবসম্মত কালানুক্রমিক বিবরণ:
+     * **ধাপ ১ (ম্যাক্রো পটভূমি ও গত ৩০ দিনের কাঠামোগত সরবরাহ-চাহিদা ভিত্তি):** বৈশ্বিক তেলের চাহিদা, ওপেক প্লাস কোটা নীতি ও ভূ-রাজনৈতিক ঝুঁকির প্রাথমিক প্রেক্ষাপট (যার ফলে তেল পূর্বে স্পাইক বা কারেকশন করেছে)।
+     * **ধাপ ২ (গত ৭–১৪ দিনের প্রধান ব্রেকিং নিউজ ও ভূ-রাজনীতি):** হরমুজ প্রণালী, মধ্যপ্রাচ্যের কূটনীতি বা বড় কোনো মার্কিন নীতি ঘোষণার তাৎক্ষণিক প্রভাব (খবরের শিরোনাম, সময় ও ইমপ্যাক্ট উল্লেখ করে)।
+     * **ধাপ ৩ (ইনভেন্টরি ও সরবরাহ ডেটার প্রভাব):** ফরেক্সফ্যাক্টরি ক্যালেন্ডারের ইআইএ (EIA) বা এপিআই (API) ইনভেন্টরি ডেটা এবং রিফাইনারি/ডিজেল পরিস্থিতির প্রতিফলন।
+     * **ধাপ ৪ (বর্তমান মার্কেট ট্রিগার ও প্রাইস অ্যাকশন মোমেন্টাম):** সর্বশেষ অনুঘটক ও খবরের ওপর ভিত্তি করে বর্তমান ট্রেডিং রেঞ্জের অবস্থা ও মোমেন্টাম।
+   - **প্রতিটি প্রধান খবরের সাথে বাধ্যতামূলকভাবে দুটি বিষয় থাকবে:**
+     * ⌛ **ইমপ্যাক্ট স্থায়ীত্ব ও মেয়াদ (Impact Duration & Expiry Horizon):** এই খবরের প্রভাব বাজারে কতদিন কার্যকর থাকবে এবং কোন নির্দিষ্ট তারিখ বা ইভেন্টের পর প্রভাব শেষ/স্তিমিত হবে।
+     * 🔄 **পরবর্তী ফলো-আপ আপডেট বা পুনরাবৃত্তির দিনক্ষণ (Next Follow-up / Recurrence Schedule):** এই সংক্রান্ত খবরের পরবর্তী আপডেট, সরকারি বৈঠক (যেমন: OPEC+ বৈঠক) বা ডেটা রিলিজ (যেমন: পরবর্তী EIA ইনভেন্টরি রিপোর্ট) আবার বাংলাদেশ সময় (BST) কবে প্রকাশ পাবে।
 
-3. ⚡ **স্বল্পমেয়াদী মুভমেন্ট প্রেডিকশন (Short-Term Prediction: ১–৩ দিন / ইন্ট্রাডে):**
+3. ⚡ **স্বল্পমেয়াদী মুভমেন্ট প্রেডিকশন (Short-Term Prediction: ১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ):**
+   - **স্বল্পমেয়াদের সুনির্দিষ্ট সময়সীমা:** *১ থেকে ৩ কার্যদিবস (বা সর্বোচ্চ ১ সপ্তাহ / ইন্ট্রাডে থেকে সুইং হরাইজন)*
    - **ডিরেকশন ও সেন্টিমেন্ট (Bias):** [বুলিশ 🟢 / বেয়ারিশ 🔴 / নিরপেক্ষ-রেঞ্জবাউন্ড 🟡]
    - **প্রত্যাশিত প্রাইস রেঞ্জ (Expected Range):** WTI এবং Brent-এর জন্য সুনির্দিষ্ট ডলার রেঞ্জ (যেমন: $XX.XX - $XX.XX)
    - **মূল টেকনিক্যাল লেভেল:** তাৎক্ষণিক সাপোর্ট (Support) ও রেজিস্ট্যান্স (Resistance) জোন
    - **নিকটবর্তী ক্যাটালাইস্ট:** আগামী ২৪-৭২ ঘণ্টার মধ্যে হরমুজ谈判 বা পরবর্তী মার্কিন ম্যাক্রো ডেটায় স্পাইকের সম্ভাবনা
 
-4. 🌐 **দীর্ঘমেয়াদী মুভমেন্ট প্রেডিকশন (Long-Term Prediction: সাপ্তাহিক / মাসিক / Q4):**
+4. 🌐 **দীর্ঘমেয়াদী মুভমেন্ট প্রেডিকশন (Long-Term Prediction: ২ সপ্তাহ থেকে ১–৩ মাস / চলতি কোয়ার্টার Q4):**
+   - **দীর্ঘমেয়াদের সুনির্দিষ্ট সময়সীমা:** *২ সপ্তাহ থেকে ১–৩ মাস (বা চলতি ২০২৬ সালের Q4 কোয়ার্টার পর্যন্ত কাঠামোগত ট্রেন্ড)*
    - **কাঠামোগত ম্যাক্রো ট্রেন্ড (Structural Macro Trend):** দীর্ঘমেয়াদে তেলের মূল গতিপথ কোন দিকে
    - **ডিমান্ড-সাপ্লাই ব্যালেন্স (Fundamental Outlook):** ওপেক প্লাস (OPEC+) কোটা নীতি, বৈশ্বিক রিফাইনিং ক্ষমতা এবং ২০২৬ সালের অর্থনৈতিক প্রবৃদ্ধি
    - **টার্গেট প্রাইস জোন (Target Levels):** দীর্ঘমেয়াদী সম্ভাব্য ফ্লোর ও সিলিং জোন
 
-5. ⚖️ **বুলিশ বনাম বেয়ারিশ প্রভাবকের তুলনামূলক মূল্যায়ন (Bullish vs Bearish Forces):**
+5. 📅 **আসন্ন শীর্ষ ক্যাটালাইস্ট ও সম্ভাব্য বড় পরিবর্তন (Upcoming High-Impact Energy Catalysts):**
+   - আগামী দিনগুলোতে কোন কোন আসন্ন ইভেন্টের (যেমন: পরবর্তী EIA ক্রুড ইনভেন্টরি ড্র, OPEC+ মনিটরিং বৈঠক, ইউএস ম্যাক্রো ডেটা) কারণে তেলের দামে বড় পরিবর্তন বা তীব্র স্পাইক আসতে পারে।
+   - প্রতিটি ইভেন্ট **বাংলাদেশ সময় (BST / GMT+6)** কোন দিন এবং কয়টার সময় রিলিজ হবে তা সময়সহ উল্লেখ।
+   - ডেটা প্রত্যাশার চেয়ে ভিন্ন এলে প্রাইস কোন লেভেলে ব্রেকআউট বা ড্রপ করতে পারে।
+
+6. ⚖️ **বুলিশ বনাম বেয়ারিশ প্রভাবকের তুলনামূলক মূল্যায়ন (Bullish vs Bearish Forces):**
    - 🟢 **দাম বাড়ানোর চালিকাশক্তি (Bullish Drivers):** [নির্দিষ্ট পয়েন্ট]
    - 🔴 **দাম কমানোর চালিকাশক্তি (Bearish Drivers):** [নির্দিষ্ট পয়েন্ট]
 
-6. 🎯 **ট্রেডারদের স্ট্র্যাটেজি ও ঝুঁকি ব্যবস্থাপনা (Actionable Trading Playbook):**
+7. 🎯 **ট্রেডারদের স্ট্র্যাটেজি ও ঝুঁকি ব্যবস্থাপনা (Actionable Trading Playbook & Risk Controls):**
    - **ইন্ট্রাডে ট্রেডারদের করণীয়:** এন্ট্রি জোন্স, টেক প্রফিট ও স্টপ লস
    - **সুইং ও পজিশনাল ট্রেডারদের করণীয়:** ডিপে বাই নাকি রাইজে সেল স্ট্র্যাটেজি
    - **ঝুঁকি সতর্কতা:** অপ্রত্যাশিত ভূ-রাজনৈতিক হেডলাইন বা হঠাৎ মিসাইল/ড্রোন হামলার ঝুঁকি ব্যবস্থাপনা

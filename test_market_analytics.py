@@ -60,7 +60,9 @@ class TestMarketAnalyticsService(unittest.TestCase):
         self.assertIsInstance(stories, list)
 
         calendar = mas.fetch_asset_calendar_events(currency="USD", category="indices")
-        self.assertIsInstance(calendar, list)
+        self.assertIsInstance(calendar, dict)
+        self.assertIn("recent", calendar)
+        self.assertIn("upcoming", calendar)
 
     def test_bot_command_handlers_registered(self):
         import bot

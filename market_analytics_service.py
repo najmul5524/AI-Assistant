@@ -221,14 +221,17 @@ def fetch_asset_forexfactory_news(category: str, currency: str, limit: int = 8) 
     )
     return matched[-limit:]
 
-def fetch_asset_calendar_events(currency: str, category: str) -> List[Dict[str, Any]]:
+def fetch_asset_calendar_events(currency: str, category: str) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Filters ForexFactory economic calendar events relevant to the asset.
+    Filters ForexFactory economic calendar events relevant to the asset,
+    separating into recent past releases (with actuals) and upcoming scheduled catalysts (with exact BST time).
     """
-    matched = []
+    recent = []
+    upcoming = []
     try:
         raw_events = forex_service.fetch_raw_calendar()
         dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
 
         target_currencies = {currency, "USD"}
         for e in raw_events:
@@ -237,79 +240,112 @@ def fetch_asset_calendar_events(currency: str, category: str) -> List[Dict[str, 
             impact = e.get("impact", "")
 
             # If oil, include energy events
-            is_energy_event = category == "oil" and any(k in title.lower() for k in ["oil", "crude", "inventor", "natural gas"])
+            is_energy_event = category == "oil" and any(k in title.lower() for k in ["oil", "crude", "inventor", "natural gas", "petroleum", "api"])
             is_relevant_curr = c_curr in target_currencies and impact in ["High", "Medium"]
 
             if is_energy_event or is_relevant_curr:
                 date_raw = e.get("date", "")
-                dt_obj = forex_news_monitor.parse_article_date(date_raw)
-                dhaka_time = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y") if dt_obj else date_raw
-                matched.append({
+                dt_obj = None
+                if date_raw:
+                    try:
+                        dt_obj = datetime.datetime.fromisoformat(date_raw)
+                    except Exception:
+                        dt_obj = forex_news_monitor.parse_article_date(date_raw)
+
+                if dt_obj:
+                    dhaka_time = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)")
+                    is_future = dt_obj > now_utc
+                else:
+                    dhaka_time = date_raw
+                    is_future = False
+
+                item_dict = {
                     "title": title,
                     "country": c_curr,
                     "impact": impact,
                     "actual": e.get("actual") or "N/A",
                     "forecast": e.get("forecast") or "N/A",
                     "previous": e.get("previous") or "N/A",
-                    "time_dhaka": dhaka_time
-                })
+                    "time_dhaka": dhaka_time,
+                    "dt": dt_obj
+                }
+
+                if is_future:
+                    upcoming.append(item_dict)
+                else:
+                    recent.append(item_dict)
     except Exception as e:
         logger.warning(f"Error fetching calendar events for {currency}: {e}")
 
-    return matched[:10]
+    # Sort upcoming ascending (nearest first)
+    upcoming.sort(key=lambda x: x["dt"] or datetime.datetime.max.replace(tzinfo=datetime.timezone.utc))
+    # Sort recent descending (freshest first)
+    recent.sort(key=lambda x: x["dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc), reverse=True)
 
-def fetch_asset_wire_news(category: str, asset_name: str, limit: int = 6) -> List[Dict[str, Any]]:
+    return {
+        "recent": recent[:8],
+        "upcoming": upcoming[:8]
+    }
+
+def fetch_asset_wire_news(category: str, asset_name: str, limit: int = 12) -> List[Dict[str, Any]]:
     """
-    Searches Google News RSS for fresh (last 72h via when:3d) commodity/macro wire dispatches.
+    Searches Google News RSS for macro and commodity wire dispatches across:
+    1. Past 7 days (when:7d) for recent market price action and catalysts
+    2. Past 30 days (when:30d) for structural macro policies still actively anchoring the trend
     """
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     articles = []
     seen = set()
 
     clean_q = asset_name.replace(" ", "+").replace("/", "+")
-    query_url = f"https://news.google.com/rss/search?q={clean_q}+price+forecast+when:3d&hl=en-US&gl=US&ceid=US:en"
+    queries = [
+        f"{clean_q}+price+news+when:7d",
+        f"{clean_q}+macro+outlook+when:30d"
+    ]
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-    try:
-        resp = requests.get(query_url, headers=headers, timeout=6)
-        if resp.status_code == 200 and resp.text:
-            root = ET.fromstring(resp.content)
-            for item in root.findall(".//item"):
-                title_el = item.find("title")
-                pub_date_el = item.find("pubDate")
-                if title_el is None or not title_el.text:
-                    continue
+    for q in queries:
+        query_url = f"https://news.google.com/rss/search?q={q}&hl=en-US&gl=US&ceid=US:en"
+        try:
+            resp = requests.get(query_url, headers=headers, timeout=8)
+            if resp.status_code == 200 and resp.text:
+                root = ET.fromstring(resp.content)
+                for item in root.findall(".//item"):
+                    title_el = item.find("title")
+                    pub_date_el = item.find("pubDate")
+                    if title_el is None or not title_el.text:
+                        continue
 
-                raw_title = html_lib.unescape(title_el.text).strip()
-                norm = raw_title.lower().strip()
-                if norm in seen:
-                    continue
-                seen.add(norm)
+                    raw_title = html_lib.unescape(title_el.text).strip()
+                    norm = raw_title.lower().strip()
+                    if norm in seen:
+                        continue
+                    seen.add(norm)
 
-                pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
-                dt_obj = forex_news_monitor.parse_article_date(pub_str)
-                pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y") if dt_obj else pub_str
+                    pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
+                    dt_obj = forex_news_monitor.parse_article_date(pub_str)
+                    pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)") if dt_obj else pub_str
 
-                source_name = "Market Wire"
-                if " - " in raw_title:
-                    parts = raw_title.rsplit(" - ", 1)
-                    clean_head = parts[0].strip()
-                    source_name = parts[1].strip()
-                else:
-                    clean_head = raw_title
+                    source_name = "Global Wire"
+                    if " - " in raw_title:
+                        parts = raw_title.rsplit(" - ", 1)
+                        clean_head = parts[0].strip()
+                        source_name = parts[1].strip()
+                    else:
+                        clean_head = raw_title
 
-                articles.append({
-                    "title": clean_head,
-                    "source": source_name,
-                    "pub_date_dhaka": pub_dhaka,
-                    "published_dt": dt_obj
-                })
-    except Exception as e:
-        logger.debug(f"Wire news fetch note: {e}")
+                    articles.append({
+                        "title": clean_head,
+                        "source": source_name,
+                        "pub_date_dhaka": pub_dhaka,
+                        "published_dt": dt_obj
+                    })
+        except Exception as e:
+            logger.debug(f"Wire news fetch note for query '{q}': {e}")
 
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     articles.sort(
-        key=lambda x: x["published_dt"] or (now_utc - datetime.timedelta(days=3)),
+        key=lambda x: x["published_dt"] or (now_utc - datetime.timedelta(days=30)),
         reverse=False
     )
     return articles[-limit:]
@@ -319,6 +355,8 @@ def generate_asset_prediction_analysis(query: str) -> str:
     Universal Entry Point:
     Takes any instrument query (e.g. 'gold', 'nasdaq', 'sp500', 'dow', 'btc', 'eth', 'eurusd', 'oil')
     and outputs a comprehensive, institutional-grade market situation & sequential movement prediction report.
+    Analyzes 7-day to 30-day active catalysts, specifies impact expiry & next update schedules,
+    defines exact Short/Long-Term timeframes, and highlights upcoming high-impact catalysts in BST.
     """
     profile = get_asset_profile(query)
     ticker = profile["ticker"]
@@ -330,13 +368,15 @@ def generate_asset_prediction_analysis(query: str) -> str:
     metrics = fetch_asset_technicals(ticker, name)
 
     # 2. Fetch ForexFactory Direct Breaking News
-    ff_stories = fetch_asset_forexfactory_news(category, currency, limit=8)
+    ff_stories = fetch_asset_forexfactory_news(category, currency, limit=10)
 
-    # 3. Fetch ForexFactory Economic Calendar
-    calendar_events = fetch_asset_calendar_events(currency, category)
+    # 3. Fetch ForexFactory Economic Calendar (Past & Upcoming)
+    cal_data = fetch_asset_calendar_events(currency, category)
+    recent_cal = cal_data.get("recent", [])
+    upcoming_cal = cal_data.get("upcoming", [])
 
-    # 4. Fetch Commodity / Financial Wire Dispatches (Last 72h)
-    wire_news = fetch_asset_wire_news(category, name, limit=6)
+    # 4. Fetch Commodity / Financial Wire Dispatches (Last 7 to 30 Days)
+    wire_news = fetch_asset_wire_news(category, name, limit=12)
 
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     dhaka_now = datetime.datetime.now(dhaka_tz).strftime("%I:%M %p, %d %B %Y (%A)")
@@ -354,15 +394,20 @@ def generate_asset_prediction_analysis(query: str) -> str:
         ff_lines.append(f"• [{it['pub_date_dhaka']}] [{it['impact_label']}] ({it['source']}) {it['title']}")
     ff_feed = "\n".join(ff_lines) if ff_lines else "Active institutional breaking news monitored."
 
-    cal_lines = []
-    for c in calendar_events:
-        cal_lines.append(f"• [{c['time_dhaka']}] ({c['impact']}) {c['country']} - {c['title']} | Actual: {c['actual']} | Forecast: {c['forecast']} | Previous: {c['previous']}")
-    cal_feed = "\n".join(cal_lines) if cal_lines else "Scheduled economic calendar events monitored."
+    recent_cal_lines = []
+    for c in recent_cal:
+        recent_cal_lines.append(f"• [{c['time_dhaka']}] ({c['impact']}) {c['country']} - {c['title']} | Actual: {c['actual']} | Forecast: {c['forecast']} | Previous: {c['previous']}")
+    recent_cal_feed = "\n".join(recent_cal_lines) if recent_cal_lines else "Recent economic calendar releases monitored."
+
+    upcoming_cal_lines = []
+    for u in upcoming_cal:
+        upcoming_cal_lines.append(f"• [{u['time_dhaka']}] [🔴 {u['impact'].upper()}] {u['country']} - {u['title']} | Forecast: {u['forecast']} | Previous: {u['previous']}")
+    upcoming_cal_feed = "\n".join(upcoming_cal_lines) if upcoming_cal_lines else "Upcoming scheduled high-impact catalysts active."
 
     wire_lines = []
     for w in wire_news:
         wire_lines.append(f"• [{w['pub_date_dhaka']}] ({w['source']}) {w['title']}")
-    wire_feed = "\n".join(wire_lines) if wire_lines else "Global wire dispatches active."
+    wire_feed_30d = "\n".join(wire_lines) if wire_lines else "Global wire dispatches (7–30 days) active."
 
     # Asset class contextual guidance
     context_note = ""
@@ -388,44 +433,65 @@ LIVE MARKET TECHNICAL METRICS:
 FOREX FACTORY DIRECT BREAKING HEADLINES (HIGH & MEDIUM IMPACT):
 {ff_feed}
 
-FOREX FACTORY ECONOMIC CALENDAR (RECENT & UPCOMING CATALYSTS):
-{cal_feed}
+FOREX FACTORY ECONOMIC CALENDAR (RECENT PAST RELEASES WITH ACTUAL DATA):
+{recent_cal_feed}
 
-GLOBAL FINANCIAL & COMMODITY WIRE DISPATCHES (LAST 72 HOURS):
-{wire_feed}
+FOREX FACTORY ECONOMIC CALENDAR (UPCOMING SCHEDULED HIGH-IMPACT CATALYSTS - IN BST):
+{upcoming_cal_feed}
 
-CRITICAL TASK:
+GLOBAL FINANCIAL & COMMODITY WIRE DISPATCHES (PAST 7 TO 30 DAYS MACRO SPECTRUM):
+{wire_feed_30d}
+
+CRITICAL TASK & INSTRUCTIONS:
 Provide a robust, institutional-grade market analysis and movement prediction for {name} in fluent, professional Bengali.
-Ensure that Section 2 ("ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ") analyzes how real-world chronological events, ForexFactory high/medium impact headlines, and macroeconomic calendar releases built up the current price action. NEVER say that there are no headlines or events.
+Ensure that:
+1. Data Horizon: Synthesize active macro & market catalysts from the past 7 to 30 days whose impact is still actively anchoring the current trend.
+2. Time Horizon Definitions: Clearly define the exact time horizon for Short-Term (১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ) and Long-Term (২ সপ্তাহ থেকে ১–৩ মাস / Q4).
+3. Catalyst Impact Expiry & Next Update Schedule: For every key news item or catalyst analyzed in Section 2, explicitly state:
+   - কখন বা কতদিন পর এর প্রভাব শেষ/স্তিমিত হবে (Impact Expiry Horizon)
+   - এই সংক্রান্ত পরবর্তী ফলো-আপ ডেটা, অফিসিয়াল মিটিং বা পরিসংখ্যান আবার বাংলাদেশ সময় কবে প্রকাশ পাবে (Next Follow-up / Recurrence Schedule).
+4. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
+5. All times must strictly be in Bangladesh Time (BST / GMT+6).
+6. NEVER state that there were no headlines or events; synthesize the real-world catalysts provided.
 
 ### MANDATORY REPORT STRUCTURE:
 
 1. 📊 **বর্তমান বাজার পরিস্থিতি ও লাইভ স্ন্যাপশট (Live Market Snapshot):**
    - {name}-এর বর্তমান লাইভ মার্কেট প্রাইস, দৈনিক পরিবর্তন (Change %), ২৪ ঘণ্টার হাই/লো এবং টেকনিক্যাল মোমেন্টাম (RSI, EMA20 এবং ATR ভোলাটিলিটি অবস্থান)।
 
-2. ⏳ **ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory):**
-   - সাম্প্রতিক ঘটনাসমূহ কীভাবে ধাপে ধাপে {name}-এর বর্তমান প্রাইস অ্যাকশন ও সেন্টিমেন্ট তৈরি করেছে তার সুস্পষ্ট বিবরণ:
-     * **ধাপ ১ (ম্যাক্রো পটভূমি ও কাঠামোগত ভিত্তি):** প্রাথমিক কারণ ও বৈশ্বিক ম্যাক্রো পরিবেশ।
-     * **ধাপ ২ (ফরেক্সফ্যাক্টরি হাই/মিডিয়াম ইমপ্যাক্ট ব্রেকিং নিউজ ও ডেটা):** সাম্প্রতিক প্রকাশিত প্রধান অর্থনৈতিক ডেটা বা ভূ-রাজনৈতিক খবরের তাৎক্ষণিক প্রভাব।
+2. ⏳ **ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory - গত ৭ থেকে ৩০ দিনের সক্রিয় প্রভাবক):**
+   - সাম্প্রতিক ৭–৩০ দিনের বড় বড় নিউজ ও ম্যাক্রো অনুঘটকসমূহ কীভাবে ধাপে ধাপে বর্তমান প্রাইস ও ট্রেন্ড তৈরি করেছে তার কালানুক্রমিক বিবরণ:
+     * **ধাপ ১ (ম্যাক্রো পটভূমি ও গত ৩০ দিনের কাঠামোগত ভিত্তি):** প্রাথমিক কারণ ও বৈশ্বিক ম্যাক্রো পরিবেশ (সেন্ট্রাল ব্যাংক পলিসি, বৈশ্বিক লিকুইডিটি, দীর্ঘমেয়াদী ডিমান্ড-সাপ্লাই)।
+     * **ধাপ ২ (গত ৭–১৪ দিনের প্রধান ব্রেকিং নিউজ ও অর্থনৈতিক ডেটা):** সাম্প্রতিক প্রকাশিত প্রধান অর্থনৈতিক ডেটা বা ভূ-রাজনৈতিক খবরের তাৎক্ষণিক প্রভাব।
      * **ধাপ ৩ (সাম্প্রতিক মার্কেট প্রতিক্রিয়া ও প্রাইস অ্যাকশন):** খবরগুলোর ফলে ঘটে যাওয়া প্রাইস রিঅ্যাকশন বা কারেকশন।
      * **ধাপ ৪ (বর্তমান ট্রিগার ও মোমেন্টাম):** সর্বশেষ খবর বা অনুঘটক যা বর্তমান প্রাইসকে ধরে রেখেছে।
+   - **প্রতিটি প্রধান খবরের সাথে বাধ্যতামূলকভাবে দুটি বিষয় থাকবে:**
+     * ⌛ **ইমপ্যাক্ট স্থায়ীত্ব ও মেয়াদ (Impact Duration & Expiry Horizon):** এই খবরের প্রভাব বাজারে কতদিন কার্যকর থাকবে এবং কোন নির্দিষ্ট তারিখ বা ইভেন্টের পর প্রভাব শেষ/স্তিমিত হবে।
+     * 🔄 **পরবর্তী ফলো-আপ আপডেট বা পুনরাবৃত্তির দিনক্ষণ (Next Follow-up / Recurrence Schedule):** এই সংক্রান্ত খবরের পরবর্তী আপডেট, সরকারি বৈঠক বা ডেটা রিলিজ আবার বাংলাদেশ সময় (BST) কবে প্রকাশ পাবে।
 
-3. ⚡ **স্বল্পমেয়াদী মুভমেন্ট প্রেডিকশন (Short-Term Prediction: ১–৩ দিন / ইন্ট্রাডে):**
+3. ⚡ **স্বল্পমেয়াদী মুভমেন্ট প্রেডিকশন (Short-Term Prediction: ১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ):**
+   - **স্বল্পমেয়াদের সুনির্দিষ্ট সময়সীমা:** *১ থেকে ৩ কার্যদিবস (বা সর্বোচ্চ ১ সপ্তাহ / ইন্ট্রাডে থেকে সুইং হরাইজন)*
    - **ডিরেকশন ও সেন্টিমেন্ট (Bias):** [বুলিশ 🟢 / বেয়ারিশ 🔴 / নিরপেক্ষ-রেঞ্জবাউন্ড 🟡]
    - **প্রত্যাশিত প্রাইস রেঞ্জ (Expected Range):** {name}-এর জন্য নির্দিষ্ট প্রাইস রেঞ্জ
    - **মূল টেকনিক্যাল লেভেল:** তাৎক্ষণিক সাপোর্ট (Support) ও রেজিস্ট্যান্স (Resistance) জোন
    - **নিকটবর্তী ক্যাটালাইস্ট:** আগামী ২৪-৭২ ঘণ্টার মধ্যে কোন ইভেন্ট বা ডেটা বড় স্পাইক ঘটাতে পারে
 
-4. 🌐 **দীর্ঘমেয়াদী মুভমেন্ট প্রেডিকশন (Long-Term Prediction: সাপ্তাহিক / মাসিক / Q4):**
+4. 🌐 **দীর্ঘমেয়াদী মুভমেন্ট প্রেডিকশন (Long-Term Prediction: ২ সপ্তাহ থেকে ১–৩ মাস / চলতি কোয়ার্টার Q4):**
+   - **দীর্ঘমেয়াদের সুনির্দিষ্ট সময়সীমা:** *২ সপ্তাহ থেকে ১–৩ মাস (বা চলতি ২০২৬ সালের Q4 কোয়ার্টার পর্যন্ত কাঠামোগত ট্রেন্ড)*
    - **কাঠামোগত ম্যাক্রো ট্রেন্ড (Structural Macro Trend):** দীর্ঘমেয়াদী প্রাইস ডিরেকশন
    - **ফান্ডামেন্টাল ভারসাম্য:** সেন্ট্রাল ব্যাংক পলিসি, বৈশ্বিক লিকুইডিটি ও ফান্ডামেন্টাল দৃষ্টিভঙ্গি
    - **টার্গেট প্রাইস জোন (Target Levels):** দীর্ঘমেয়াদী সম্ভাব্য টার্গেট জোন
 
-5. ⚖️ **বুলিশ বনাম বেয়ারিশ প্রভাবকের তুলনামূলক মূল্যায়ন (Bullish vs Bearish Forces):**
+5. 📅 **আসন্ন শীর্ষ ক্যাটালাইস্ট ও সম্ভাব্য বড় পরিবর্তন (Upcoming High-Impact Catalysts & Market Impact):**
+   - আগামী দিনগুলোতে কোন কোন আসন্ন ইভেন্টের কারণে মার্কেটে বড় পরিবর্তন বা তীব্র ভোলাটিলিটি আসতে পারে।
+   - প্রতিটি ইভেন্ট **বাংলাদেশ সময় (BST / GMT+6)** কোন দিন এবং কয়টার সময় রিলিজ হবে তা সময়সহ উল্লেখ।
+   - প্রত্যাশিত পরিবর্তন ও মার্কেটের সম্ভাব্য প্রতিক্রিয়া (যেমন: ডেটা অপ্রত্যাশিত এলে কোন লেভেলে ব্রেকআউট হতে পারে)।
+
+6. ⚖️ **বুলিশ বনাম বেয়ারিশ প্রভাবকের তুলনামূলক মূল্যায়ন (Bullish vs Bearish Forces):**
    - 🟢 **দাম বাড়ানোর চালিকাশক্তি (Bullish Drivers):** [নির্দিষ্ট পয়েন্ট]
    - 🔴 **দাম কমানোর চালিকাশক্তি (Bearish Drivers):** [নির্দিষ্ট পয়েন্ট]
 
-6. 🎯 **ট্রেডারদের স্ট্র্যাটেজি ও ঝুঁকি ব্যবস্থাপনা (Actionable Trading Playbook):**
+7. 🎯 **ট্রেডারদের স্ট্র্যাটেজি ও ঝুঁকি ব্যবস্থাপনা (Actionable Trading Playbook & Risk Controls):**
    - **ইন্ট্রাডে ট্রেডারদের করণীয়:** এন্ট্রি জোন, টেক প্রফিট ও স্টপ লস
    - **সুইং ও পজিশনাল ট্রেডারদের করণীয়:** পজিশনিং ও এক্সপোজার ম্যানেজমেন্ট
    - **ঝুঁকি সতর্কতা:** অপ্রত্যাশিত স্পাইক বা সেন্ট্রাল ব্যাংক ভোল্টিলিটি সামলানোর পরামর্শ

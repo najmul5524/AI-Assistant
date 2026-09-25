@@ -145,9 +145,10 @@ def fetch_asset_technicals(ticker: str, name: str) -> Dict[str, Any]:
         logger.warning(f"Error fetching technical metrics for {ticker}: {e}")
         return {"name": name, "ticker": ticker, "current_price": "N/A"}
 
-def fetch_asset_forexfactory_news(category: str, currency: str, limit: int = 8) -> List[Dict[str, Any]]:
+def fetch_asset_forexfactory_news(category: str, currency: str = "USD", limit: int = 35) -> List[Dict[str, Any]]:
     """
     Filters ForexFactory direct breaking news matching the target asset category or currency.
+    Guarantees retention of ALL news from last 48 hours (today & yesterday) and all High/Med impact items.
     """
     keyword_map = {
         "gold": ["gold", "xau", "precious metal", "safe haven", "silver", "yield", "fed", "dollar", "inflation", "rates"],
@@ -167,6 +168,19 @@ def fetch_asset_forexfactory_news(category: str, currency: str, limit: int = 8) 
     try:
         direct = forex_news_monitor.fetch_forexfactory_direct_news(limit=60)
         all_candidates.extend(direct)
+        # Auto-persist direct news to database so older items are never lost
+        for d in direct:
+            try:
+                database.mark_news_as_seen(
+                    d.get("news_id", forex_news_monitor.generate_news_id(d["title"])),
+                    d["title"],
+                    d.get("link", ""),
+                    d.get("pub_date", ""),
+                    impact=d.get("impact", ""),
+                    description=d.get("description", "")
+                )
+            except Exception:
+                pass
     except Exception as e:
         logger.warning(f"Tier 1 FF direct news fetch note: {e}")
 
@@ -179,7 +193,7 @@ def fetch_asset_forexfactory_news(category: str, currency: str, limit: int = 8) 
 
     # Tier 3: Persistent Database Cache
     try:
-        cached = database.get_recent_seen_news(limit=60)
+        cached = database.get_recent_seen_news(limit=80)
         dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
         for c in cached:
             dt_obj = forex_news_monitor.parse_article_date(c.get("published_at", ""))
@@ -195,6 +209,12 @@ def fetch_asset_forexfactory_news(category: str, currency: str, limit: int = 8) 
     except Exception as e:
         logger.warning(f"Tier 3 cached news fetch note: {e}")
 
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    cutoff_48h = now_utc - datetime.timedelta(hours=48)
+
+    prioritized = []
+    others = []
+
     for s in all_candidates:
         t_lower = s.get("title", "").lower()
         d_lower = s.get("description", "").lower()
@@ -206,20 +226,30 @@ def fetch_asset_forexfactory_news(category: str, currency: str, limit: int = 8) 
                 seen.add(norm)
                 impact = s.get("impact", "").strip().lower()
                 impact_label = "🔴 HIGH" if impact == "high" else ("🟠 MEDIUM" if impact == "medium" else ("🟡 LOW" if impact == "low" else "NORMAL"))
-                matched.append({
+                item_dict = {
                     "title": s["title"],
                     "impact_label": impact_label,
                     "pub_date_dhaka": s.get("pub_date_dhaka", ""),
                     "published_dt": s.get("published_dt"),
                     "source": s.get("source", "Forex Factory")
-                })
+                }
 
-    # Sort chronological
-    matched.sort(
-        key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
-        reverse=False
-    )
-    return matched[-limit:]
+                # Priority: Any news within last 48 hours (today & yesterday) or High/Medium impact
+                dt = s.get("published_dt")
+                if (dt and dt >= cutoff_48h) or impact in ["high", "medium"]:
+                    prioritized.append(item_dict)
+                else:
+                    others.append(item_dict)
+
+    # Sort each group chronologically
+    prioritized.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+    others.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+
+    # Retain ALL prioritized items, and fill any remaining quota with older items
+    remaining_slots = max(0, limit - len(prioritized))
+    combined = others[-remaining_slots:] + prioritized if remaining_slots > 0 else prioritized
+    combined.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+    return combined
 
 def fetch_asset_calendar_events(currency: str, category: str) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -344,11 +374,31 @@ def fetch_asset_wire_news(category: str, asset_name: str, limit: int = 12) -> Li
             logger.debug(f"Wire news fetch note for query '{q}': {e}")
 
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    articles.sort(
-        key=lambda x: x["published_dt"] or (now_utc - datetime.timedelta(days=30)),
-        reverse=False
-    )
-    return articles[-limit:]
+    cutoff_48h = now_utc - datetime.timedelta(hours=48)
+    cutoff_7d = now_utc - datetime.timedelta(days=7)
+
+    b_48h = []
+    b_7d = []
+    b_30d = []
+
+    for a in articles:
+        p_dt = a.get("published_dt") or (now_utc - datetime.timedelta(days=15))
+        if p_dt >= cutoff_48h:
+            b_48h.append(a)
+        elif p_dt >= cutoff_7d:
+            b_7d.append(a)
+        else:
+            b_30d.append(a)
+
+    b_48h.sort(key=lambda x: x["published_dt"] or now_utc)
+    b_7d.sort(key=lambda x: x["published_dt"] or now_utc)
+    b_30d.sort(key=lambda x: x["published_dt"] or now_utc)
+
+    # Multi-horizon representative sampling:
+    # Up to 12 from last 48h (today & yesterday), up to 8 from days 3-7, up to 8 from days 8-30
+    selected = b_30d[-8:] + b_7d[-8:] + b_48h[-12:]
+    selected.sort(key=lambda x: x["published_dt"] or now_utc)
+    return selected
 
 def generate_asset_prediction_analysis(query: str) -> str:
     """
@@ -368,7 +418,7 @@ def generate_asset_prediction_analysis(query: str) -> str:
     metrics = fetch_asset_technicals(ticker, name)
 
     # 2. Fetch ForexFactory Direct Breaking News
-    ff_stories = fetch_asset_forexfactory_news(category, currency, limit=10)
+    ff_stories = fetch_asset_forexfactory_news(category, currency, limit=30)
 
     # 3. Fetch ForexFactory Economic Calendar (Past & Upcoming)
     cal_data = fetch_asset_calendar_events(currency, category)
@@ -376,10 +426,13 @@ def generate_asset_prediction_analysis(query: str) -> str:
     upcoming_cal = cal_data.get("upcoming", [])
 
     # 4. Fetch Commodity / Financial Wire Dispatches (Last 7 to 30 Days)
-    wire_news = fetch_asset_wire_news(category, name, limit=12)
+    wire_news = fetch_asset_wire_news(category, name, limit=28)
 
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     dhaka_now = datetime.datetime.now(dhaka_tz).strftime("%I:%M %p, %d %B %Y (%A)")
+
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    cutoff_48h = now_utc - datetime.timedelta(hours=48)
 
     # Build prompt blocks
     tech_line = (
@@ -391,7 +444,9 @@ def generate_asset_prediction_analysis(query: str) -> str:
 
     ff_lines = []
     for it in ff_stories:
-        ff_lines.append(f"• [{it['pub_date_dhaka']}] [{it['impact_label']}] ({it['source']}) {it['title']}")
+        dt = it.get("published_dt")
+        p_tag = " [গত ২৪-৪৮ ঘণ্টা / আজ-গতকাল]" if dt and dt >= cutoff_48h else " [গত ৩–৭ দিন]"
+        ff_lines.append(f"• [{it['pub_date_dhaka']}]{p_tag} [{it['impact_label']}] ({it['source']}) {it['title']}")
     ff_feed = "\n".join(ff_lines) if ff_lines else "Active institutional breaking news monitored."
 
     recent_cal_lines = []
@@ -406,7 +461,14 @@ def generate_asset_prediction_analysis(query: str) -> str:
 
     wire_lines = []
     for w in wire_news:
-        wire_lines.append(f"• [{w['pub_date_dhaka']}] ({w['source']}) {w['title']}")
+        dt = w.get("published_dt")
+        if dt and dt >= cutoff_48h:
+            w_tag = " [গত ২৪-৪৮ ঘণ্টা / আজ-গতকাল]"
+        elif dt and dt >= (now_utc - datetime.timedelta(days=7)):
+            w_tag = " [গত ৩–৭ দিন]"
+        else:
+            w_tag = " [গত ৮–৩০ দিন ম্যাক্রো ভিত্তি]"
+        wire_lines.append(f"• [{w['pub_date_dhaka']}]{w_tag} ({w['source']}) {w['title']}")
     wire_feed_30d = "\n".join(wire_lines) if wire_lines else "Global wire dispatches (7–30 days) active."
 
     # Asset class contextual guidance
@@ -447,12 +509,16 @@ Provide a robust, institutional-grade market analysis and movement prediction fo
 Ensure that:
 1. Data Horizon: Synthesize active macro & market catalysts from the past 7 to 30 days whose impact is still actively anchoring the current trend.
 2. Time Horizon Definitions: Clearly define the exact time horizon for Short-Term (১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ) and Long-Term (২ সপ্তাহ থেকে ১–৩ মাস / Q4).
-3. Catalyst Impact Expiry & Next Update Schedule: For every key news item or catalyst analyzed in Section 2, explicitly state:
-   - কখন বা কতদিন পর এর প্রভাব শেষ/স্তিমিত হবে (Impact Expiry Horizon)
-   - এই সংক্রান্ত পরবর্তী ফলো-আপ ডেটা, অফিসিয়াল মিটিং বা পরিসংখ্যান আবার বাংলাদেশ সময় কবে প্রকাশ পাবে (Next Follow-up / Recurrence Schedule).
-4. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
-5. All times must strictly be in Bangladesh Time (BST / GMT+6).
-6. NEVER state that there were no headlines or events; synthesize the real-world catalysts provided.
+3. Explicit Catalyst Detailing: In Section 2, DO NOT write a single vague narrative paragraph. Every key news item must be EXPLICITLY and SEPARATELY presented with:
+   - Specific Headline (খবরের সঠিক শিরোনাম)
+   - Publication Date & Time in BST (বাংলাদেশ সময়)
+   - Source & Impact level (যেমন: Forex Factory [🔴 HIGH], Reuters, Bloomberg, WSJ)
+   - Price reaction & immediate market impact
+   - ⌛ Impact Expiry Horizon (কখন/কতদিন পর প্রভাব শেষ বা স্তিমিত হবে)
+   - 🔄 Next Follow-up / Recurrence Schedule (পরবর্তী আপডেট বা অফিশিয়াল ডেটা বাংলাদেশ সময় কবে আসবে)
+4. Do NOT omit any news from yesterday (২৪ সেপ্টেম্বর) or today (২৫ সেপ্টেম্বর). All major recent headlines from the feed above must be itemized.
+5. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
+6. All times must strictly be in Bangladesh Time (BST / GMT+6).
 
 ### MANDATORY REPORT STRUCTURE:
 
@@ -460,14 +526,26 @@ Ensure that:
    - {name}-এর বর্তমান লাইভ মার্কেট প্রাইস, দৈনিক পরিবর্তন (Change %), ২৪ ঘণ্টার হাই/লো এবং টেকনিক্যাল মোমেন্টাম (RSI, EMA20 এবং ATR ভোলাটিলিটি অবস্থান)।
 
 2. ⏳ **ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory - গত ৭ থেকে ৩০ দিনের সক্রিয় প্রভাবক):**
-   - সাম্প্রতিক ৭–৩০ দিনের বড় বড় নিউজ ও ম্যাক্রো অনুঘটকসমূহ কীভাবে ধাপে ধাপে বর্তমান প্রাইস ও ট্রেন্ড তৈরি করেছে তার কালানুক্রমিক বিবরণ:
-     * **ধাপ ১ (ম্যাক্রো পটভূমি ও গত ৩০ দিনের কাঠামোগত ভিত্তি):** প্রাথমিক কারণ ও বৈশ্বিক ম্যাক্রো পরিবেশ (সেন্ট্রাল ব্যাংক পলিসি, বৈশ্বিক লিকুইডিটি, দীর্ঘমেয়াদী ডিমান্ড-সাপ্লাই)।
-     * **ধাপ ২ (গত ৭–১৪ দিনের প্রধান ব্রেকিং নিউজ ও অর্থনৈতিক ডেটা):** সাম্প্রতিক প্রকাশিত প্রধান অর্থনৈতিক ডেটা বা ভূ-রাজনৈতিক খবরের তাৎক্ষণিক প্রভাব।
-     * **ধাপ ৩ (সাম্প্রতিক মার্কেট প্রতিক্রিয়া ও প্রাইস অ্যাকশন):** খবরগুলোর ফলে ঘটে যাওয়া প্রাইস রিঅ্যাকশন বা কারেকশন।
-     * **ধাপ ৪ (বর্তমান ট্রিগার ও মোমেন্টাম):** সর্বশেষ খবর বা অনুঘটক যা বর্তমান প্রাইসকে ধরে রেখেছে।
-   - **প্রতিটি প্রধান খবরের সাথে বাধ্যতামূলকভাবে দুটি বিষয় থাকবে:**
-     * ⌛ **ইমপ্যাক্ট স্থায়ীত্ব ও মেয়াদ (Impact Duration & Expiry Horizon):** এই খবরের প্রভাব বাজারে কতদিন কার্যকর থাকবে এবং কোন নির্দিষ্ট তারিখ বা ইভেন্টের পর প্রভাব শেষ/স্তিমিত হবে।
-     * 🔄 **পরবর্তী ফলো-আপ আপডেট বা পুনরাবৃত্তির দিনক্ষণ (Next Follow-up / Recurrence Schedule):** এই সংক্রান্ত খবরের পরবর্তী আপডেট, সরকারি বৈঠক বা ডেটা রিলিজ আবার বাংলাদেশ সময় (BST) কবে প্রকাশ পাবে।
+   ⚠️ প্রতিটি গুরুত্বপূর্ণ খবরকে আলাদা আলাদা সাব-এন্ট্রি হিসেবে সুনির্দিষ্ট শিরোনাম, সময়, উৎস এবং ইমপ্যাক্টসহ উপস্থাপন করতে হবে:
+
+   🔹 **ধাপ ১: ম্যাক্রো পটভূমি ও গত ৩০ দিনের কাঠামোগত ভিত্তি (দিন ৮–৩০):**
+   - সেন্ট্রাল ব্যাংক পলিসি, বৈশ্বিক লিকুইডিটি ও দীর্ঘমেয়াদী ফান্ডামেন্টাল ভিত্তি তৈরি করা খবরের তালিকা ও বিবরণ।
+   - প্রতিটি খবরের জন্য: শিরোনাম, ⌛ ইমপ্যাক্ট মেয়াদ ও 🔄 পরবর্তী ফলো-আপ দিনক্ষণ।
+
+   🔹 **ধাপ ২: গত ৩–৭ দিনের প্রধান অনুঘটক ও অর্থনৈতিক ডেটা (দিন ৩–৭):**
+   - বিগত সপ্তাহে প্রকাশিত প্রধান অর্থনৈতিক বা ভূ-রাজনৈতিক খবরের তালিকা।
+   - প্রতিটি খবরের জন্য: শিরোনাম, প্রাইস প্রতিক্রিয়া, ⌛ ইমপ্যাক্ট মেয়াদ ও 🔄 পরবর্তী ফলো-আপ দিনক্ষণ।
+
+   🔹 **ধাপ ৩: গতকাল ও আজকের ব্রেকিং নিউজ ও সরাসরি প্রাইস ইমপ্যাক্ট (গত ২৪–৪৮ ঘণ্টা):**
+   (গতকাল এবং আজকের প্রতিটি খবরকে পয়েন্ট আকারে সুনির্দিষ্ট শিরোনাম, তারিখ ও সময়সহ তুলে ধরতে হবে):
+   • 📰 **[তারিখ ও সময় - BST] | [উৎস ও ইমপ্যাক্ট: যেমন 🔴 HIGH / Forex Factory / Reuters / Bloomberg]:**
+     - **খবরের শিরোনাম:** "খবরের সুনির্দিষ্ট শিরোনাম"
+     - **বাজার পরিস্থিতি ও প্রাইস প্রতিক্রিয়া:** এই সংবাদের ফলে তাৎক্ষণিক কী প্রভাব পড়েছে এবং বাজার সেন্টিমেন্ট কেমন রূপ নিয়েছে।
+     - ⌛ **ইমপ্যাক্ট স্থায়ীত্ব ও মেয়াদ (Impact Duration & Expiry Horizon):** এই প্রভাব কতদিন পর্যন্ত বাজারে থাকবে এবং কোন ইভেন্টের পর শেষ হবে।
+     - 🔄 **পরবর্তী ফলো-আপ আপডেট বা পুনরাবৃত্তির দিনক্ষণ (Next Follow-up in BST):** বাংলাদেশ সময়ে পরবর্তী ডেটা বা অফিশিয়াল আপডেট কবে আসবে।
+
+   🔹 **ধাপ ৪: ফরেক্সফ্যাক্টরি অর্থনৈতিক ক্যালেন্ডার ডেটা বিশ্লেষণ:**
+   - প্রকাশিত সাম্প্রতিক ইকোনমিক ডেটার (Actual vs Forecast vs Previous) প্রতিফলন ও বর্তমান প্রভাব।
 
 3. ⚡ **স্বল্পমেয়াদী মুভমেন্ট প্রেডিকশন (Short-Term Prediction: ১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ):**
    - **স্বল্পমেয়াদের সুনির্দিষ্ট সময়সীমা:** *১ থেকে ৩ কার্যদিবস (বা সর্বোচ্চ ১ সপ্তাহ / ইন্ট্রাডে থেকে সুইং হরাইজন)*

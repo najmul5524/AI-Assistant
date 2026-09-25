@@ -303,12 +303,12 @@ GLOBAL COMMODITY WIRE DISPATCHES (LAST 72 HOURS):
 
 CRITICAL TASK & INSTRUCTIONS:
 Provide a robust, comprehensive, institutional movement prediction for Crude Oil (WTI & Brent) in professional, fluent Bengali.
-Ensure that Section 2 ("ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ") explicitly incorporates the real-world events above:
-1. Specifically analyze the **ForexFactory High-Impact news from yesterday (Sep 24)** regarding the US-Iran discussions to phase in a deal to reopen the Strait of Hormuz and end the US naval blockade, and how that eased war risk premiums and pulled WTI from $96.78 down towards $92.50.
-2. Note the subsequent statements from Iranian officials (Fars warning of potential conflict expansion) creating two-way volatility.
-3. Integrate the ForexFactory Crude Oil Inventories (EIA data: -0.7M draw forecast vs -0.6M previous) and US requests for refiners to voluntarily curb diesel exports.
-4. Synthesize how this chronological chain of events drives current prices and sets up the Short-Term and Long-Term trajectory.
-5. NEVER state that there were no breaking headlines recorded.
+Ensure that Section 2 ("ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ") dynamically and chronologically analyzes the real-world live events provided in the sections above (ForexFactory Breaking News, Economic Calendar, and Commodity Wire):
+1. Synthesize the latest ForexFactory High & Medium Impact headlines (e.g. geopolitical developments, OPEC+ decisions, supply chain or maritime disruptions) and how they impact war risk premiums and current price fluctuations.
+2. Incorporate the latest ForexFactory Economic Calendar releases (specifically EIA/API crude oil and petroleum inventory draws/builds).
+3. Connect the latest global commodity wire dispatches to explain the chain reaction from structural macro backdrop to immediate market momentum.
+4. If specific high/medium impact headlines or inventory reports appear in the live data blocks above, explicitly cite their actual titles, impact ratings (🔴 HIGH / 🟠 MEDIUM), and timestamps as recorded in the live feed.
+5. NEVER state that there were no breaking headlines recorded; always analyze the active catalysts and market forces provided in the live data blocks above.
 
 ### EXACT REPORT STRUCTURE:
 
@@ -316,11 +316,11 @@ Ensure that Section 2 ("ঘটনাগুলোর পর্যায়ক্র�
    - WTI এবং Brent-এর বর্তমান লাইভ প্রাইস, দৈনিক পরিবর্তন (Change %), ডে হাই/লো এবং টেকনিক্যাল মোমেন্টাম (RSI, EMA20 এবং ATR ভোলাটিলিটি)।
 
 2. ⏳ **ঘটনাগুলোর পর্যায়ক্রমিক ও কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory):**
-   - সাম্প্রতিক খবরগুলো ধাপে ধাপে কীভাবে তেলের সেন্টিমেন্টকে বর্তমান অবস্থানে এনেছে তার বিস্তারিত বিবরণ:
-     * **ধাপ ১ (ভূ-রাজনৈতিক ঝুঁকি ও হরমুজ প্রণালী সংকট):** মধ্যপ্রাচ্যের উত্তেজনা, হরমুজ প্রণালী ও শিপিং রুট নিয়ে তৈরি হওয়া প্রাথমিক ঝুঁকি প্রিমিয়াম (যার ফলে তেল $৯৬-$১০৮ পর্যন্ত স্পাইক করেছিল)।
-     * **ধাপ ২ (গতকাল ফরেক্সফ্যাক্টরির হাই-ইমপ্যাক্ট ব্রেকিং নিউজ):** গতকাল রাত ১০:১৬-১০:৫২ মিনিটে (২৪ সেপ্টেম্বর) ForexFactory-তে প্রকাশিত রয়টার্সের হাই-ইমপ্যাক্ট নিউজ: **"US, Iran Explore Phased Deal To Reopen Hormuz, End Blockade"** — হরমুজ প্রণালী পুনরায় চালু ও মার্কিন নৌ-অবরোধ প্রত্যাহারের সম্ভাব্য চুক্তির খবরে বাজারে যুদ্ধকালীন প্রিমিয়াম কিছুটা কমে গিয়ে WTI দ্রুত $৯২.৫০ লেভেলে নেমে আসে।
-     * **ধাপ ৩ (পরস্পরবিরোধী ইরানি বার্তা ও আজকের আপডেট):** আজ দুপুরের (২৫ সেপ্টেম্বর) আপডেট—ইরানি কর্মকর্তাদের মার্কিন সংঘাত বৃদ্ধির সতর্কতা বনাম প্রেসিডেন্ট পেজেশকিয়ানের অর্থনৈতিক সংকট নিরসন ও চুক্তির আকাঙ্ক্ষা।
-     * **ধাপ ৪ (ইআইএ ইনভেন্টরি ও ডিজেল সরবরাহ সীমাবদ্ধতা):** ফরেক্সফ্যাক্টরি ক্যালেন্ডারের অপরিশোধিত তেল ইনভেন্টরি ড্র (-০.৭M) এবং মার্কিন রিফাইনারদের ডিজেল রপ্তানি সীমিত করার আহ্বান।
+   - লাইভ ডেটা ফিডে প্রাপ্ত সাম্প্রতিক খবরের ধারাবাহিকতায় তেলের সেন্টিমেন্ট ও প্রাইস অ্যাকশন কীভাবে গঠিত হয়েছে তার বাস্তবসম্মত কালানুক্রমিক বিবরণ:
+     * **ধাপ ১ (ম্যাক্রো পটভূমি ও কাঠামোগত সরবরাহ-চাহিদা ভিত্তি):** বৈশ্বিক তেলের চাহিদা, ওপেক প্লাস নীতি ও ভূ-রাজনৈতিক ঝুঁকির প্রাথমিক প্রেক্ষাপট।
+     * **ধাপ ২ (ফরেক্সফ্যাক্টরি হাই/মিডিয়াম ইমপ্যাক্ট ব্রেকিং নিউজ ও ভূ-রাজনীতি):** লাইভ ফিডে থাকা সাম্প্রতিকতম হাই/মিডিয়াম ইমপ্যাক্ট ব্রেকিং খবরের তাৎক্ষণিক প্রভাব (খবরের শিরোনাম, সময় ও ইমপ্যাক্ট উল্লেখ করে)।
+     * **ধাপ ৩ (ইনভেন্টরি ও সাপ্লাই চেইন ক্যাটালাইস্ট):** ফরেক্সফ্যাক্টরি ক্যালেন্ডারের ইআইএ (EIA) বা এপিআই (API) ইনভেন্টরি ডেটা এবং রিফাইনারি/শিপিং পরিস্থিতির প্রতিফলন।
+     * **ধাপ ৪ (বর্তমান মার্কেট ট্রিগার ও প্রাইস অ্যাকশন মোমেন্টাম):** সর্বশেষ অনুঘটক ও খবরের ওপর ভিত্তি করে বর্তমান ট্রেডিং রেঞ্জের অবস্থা ও গতি।
 
 3. ⚡ **স্বল্পমেয়াদী মুভমেন্ট প্রেডিকশন (Short-Term Prediction: ১–৩ দিন / ইন্ট্রাডে):**
    - **ডিরেকশন ও সেন্টিমেন্ট (Bias):** [বুলিশ 🟢 / বেয়ারিশ 🔴 / নিরপেক্ষ-রেঞ্জবাউন্ড 🟡]

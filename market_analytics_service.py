@@ -213,7 +213,6 @@ def fetch_asset_forexfactory_news(category: str, currency: str = "USD", limit: i
     cutoff_48h = now_utc - datetime.timedelta(hours=48)
 
     prioritized = []
-    others = []
 
     for s in all_candidates:
         t_lower = s.get("title", "").lower()
@@ -225,7 +224,29 @@ def fetch_asset_forexfactory_news(category: str, currency: str = "USD", limit: i
             if norm not in seen:
                 seen.add(norm)
                 impact = s.get("impact", "").strip().lower()
-                impact_label = "🔴 HIGH" if impact == "high" else ("🟠 MEDIUM" if impact == "medium" else ("🟡 LOW" if impact == "low" else "NORMAL"))
+
+                # STRICT RULE: Exclude explicit LOW impact news!
+                if impact == "low":
+                    continue
+
+                # Must be High or Medium, OR critical macro/market catalyst
+                is_explicit_high_med = impact in ["high", "medium"]
+                is_critical_catalyst = any(k in t_lower for k in [
+                    "fed", "powell", "fomc", "rate hike", "rate cut", "cpi", "inflation",
+                    "war", "truce", "sanction", "crisis", "surge", "plunge", "record high",
+                    "all-time high", "all time high", "tariff", "recession", "gdp", "nfp",
+                    "etf", "sec", "opec", "hormuz", "ecb", "lagarde", "boe", "bailey", "boj", "ueda",
+                    "stimulus", "liquidity", "debt ceiling", "default"
+                ])
+
+                if not (is_explicit_high_med or is_critical_catalyst):
+                    continue
+
+                if impact == "high" or any(k in t_lower for k in ["fed", "powell", "fomc", "rate cut", "rate hike", "cpi", "war", "recession", "nfp"]):
+                    impact_label = "🔴 HIGH"
+                else:
+                    impact_label = "🟠 MEDIUM"
+
                 item_dict = {
                     "title": s["title"],
                     "impact_label": impact_label,
@@ -233,23 +254,11 @@ def fetch_asset_forexfactory_news(category: str, currency: str = "USD", limit: i
                     "published_dt": s.get("published_dt"),
                     "source": s.get("source", "Forex Factory")
                 }
+                prioritized.append(item_dict)
 
-                # Priority: Any news within last 48 hours (today & yesterday) or High/Medium impact
-                dt = s.get("published_dt")
-                if (dt and dt >= cutoff_48h) or impact in ["high", "medium"]:
-                    prioritized.append(item_dict)
-                else:
-                    others.append(item_dict)
-
-    # Sort each group chronologically
+    # Sort chronologically
     prioritized.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-    others.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-
-    # Retain ALL prioritized items, and fill any remaining quota with older items
-    remaining_slots = max(0, limit - len(prioritized))
-    combined = others[-remaining_slots:] + prioritized if remaining_slots > 0 else prioritized
-    combined.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-    return combined
+    return prioritized[-limit:]
 
 def fetch_asset_calendar_events(currency: str, category: str) -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -317,11 +326,12 @@ def fetch_asset_calendar_events(currency: str, category: str) -> Dict[str, List[
         "upcoming": upcoming[:8]
     }
 
-def fetch_asset_wire_news(category: str, asset_name: str, limit: int = 12) -> List[Dict[str, Any]]:
+def fetch_asset_wire_news(category: str, asset_name: str, limit: int = 15, ff_reference_titles: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """
     Searches Google News RSS for macro and commodity wire dispatches across:
     1. Past 7 days (when:7d) for recent market price action and catalysts
     2. Past 30 days (when:30d) for structural macro policies still actively anchoring the trend
+    Strictly filters for HIGH IMPACT only, and DEDUPLICATES against ForexFactory titles.
     """
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     articles = []
@@ -347,28 +357,46 @@ def fetch_asset_wire_news(category: str, asset_name: str, limit: int = 12) -> Li
                         continue
 
                     raw_title = html_lib.unescape(title_el.text).strip()
-                    norm = raw_title.lower().strip()
-                    if norm in seen:
-                        continue
-                    seen.add(norm)
-
-                    pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
-                    dt_obj = forex_news_monitor.parse_article_date(pub_str)
-                    pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)") if dt_obj else pub_str
-
-                    source_name = "Global Wire"
                     if " - " in raw_title:
                         parts = raw_title.rsplit(" - ", 1)
                         clean_head = parts[0].strip()
                         source_name = parts[1].strip()
                     else:
                         clean_head = raw_title
+                        source_name = "Global Wire"
+
+                    norm = clean_head.lower().strip()
+                    if norm in seen:
+                        continue
+
+                    # Deduplication: Drop if already covered by ForexFactory
+                    if ff_reference_titles and forex_news_monitor.is_duplicate_story(clean_head, ff_reference_titles):
+                        continue
+
+                    # STRICT FILTER: High Impact only for external wire news
+                    is_high = any(k in norm for k in [
+                        "war", "truce", "ceasefire", "strike", "attack", "missile", "drone",
+                        "sanction", "emergency", "crisis", "surge", "plunge", "record high",
+                        "record low", "all-time high", "all time high", "crash", "rally", "fed",
+                        "powell", "fomc", "rate cut", "rate hike", "interest rate", "inflation",
+                        "cpi", "pce", "recession", "tariff", "trade war", "gdp", "nfp", "jobs report",
+                        "opec", "hormuz", "etf", "sec", "liquidation", "bailout", "yield curve",
+                        "debt ceiling", "default", "central bank", "stimulus", "record surge"
+                    ])
+                    if not is_high:
+                        continue
+
+                    seen.add(norm)
+                    pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
+                    dt_obj = forex_news_monitor.parse_article_date(pub_str)
+                    pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)") if dt_obj else pub_str
 
                     articles.append({
                         "title": clean_head,
                         "source": source_name,
                         "pub_date_dhaka": pub_dhaka,
-                        "published_dt": dt_obj
+                        "published_dt": dt_obj,
+                        "impact_label": "🔴 HIGH"
                     })
         except Exception as e:
             logger.debug(f"Wire news fetch note for query '{q}': {e}")
@@ -395,8 +423,7 @@ def fetch_asset_wire_news(category: str, asset_name: str, limit: int = 12) -> Li
     b_30d.sort(key=lambda x: x["published_dt"] or now_utc)
 
     # Multi-horizon representative sampling:
-    # Up to 12 from last 48h (today & yesterday), up to 8 from days 3-7, up to 8 from days 8-30
-    selected = b_30d[-8:] + b_7d[-8:] + b_48h[-12:]
+    selected = b_30d[-6:] + b_7d[-8:] + b_48h[-10:]
     selected.sort(key=lambda x: x["published_dt"] or now_utc)
     return selected
 
@@ -417,16 +444,17 @@ def generate_asset_prediction_analysis(query: str) -> str:
     # 1. Fetch Live Technicals
     metrics = fetch_asset_technicals(ticker, name)
 
-    # 2. Fetch ForexFactory Direct Breaking News
-    ff_stories = fetch_asset_forexfactory_news(category, currency, limit=30)
+    # 2. Fetch ForexFactory Direct Breaking News (Strictly High & Medium impact only)
+    ff_stories = fetch_asset_forexfactory_news(category, currency, limit=25)
+    ff_reference_titles = [s["title"] for s in ff_stories]
 
     # 3. Fetch ForexFactory Economic Calendar (Past & Upcoming)
     cal_data = fetch_asset_calendar_events(currency, category)
     recent_cal = cal_data.get("recent", [])
     upcoming_cal = cal_data.get("upcoming", [])
 
-    # 4. Fetch Commodity / Financial Wire Dispatches (Last 7 to 30 Days)
-    wire_news = fetch_asset_wire_news(category, name, limit=28)
+    # 4. Fetch Commodity / Financial Wire Dispatches (Strictly Unique High-Impact Only, Deduplicated)
+    wire_news = fetch_asset_wire_news(category, name, limit=20, ff_reference_titles=ff_reference_titles)
 
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     dhaka_now = datetime.datetime.now(dhaka_tz).strftime("%I:%M %p, %d %B %Y (%A)")
@@ -468,7 +496,7 @@ def generate_asset_prediction_analysis(query: str) -> str:
             w_tag = " [গত ৩–৭ দিন]"
         else:
             w_tag = " [গত ৮–৩০ দিন ম্যাক্রো ভিত্তি]"
-        wire_lines.append(f"• [{w['pub_date_dhaka']}]{w_tag} ({w['source']}) {w['title']}")
+        wire_lines.append(f"• [{w['pub_date_dhaka']}]{w_tag} [{w.get('impact_label', '🔴 HIGH')}] ({w['source']}) {w['title']}")
     wire_feed_30d = "\n".join(wire_lines) if wire_lines else "Global wire dispatches (7–30 days) active."
 
     # Asset class contextual guidance
@@ -492,7 +520,7 @@ Analytical Context: {context_note}
 LIVE MARKET TECHNICAL METRICS:
 {tech_line}
 
-FOREX FACTORY DIRECT BREAKING HEADLINES (HIGH & MEDIUM IMPACT):
+FOREX FACTORY DIRECT BREAKING HEADLINES (STRICTLY HIGH & MEDIUM IMPACT ONLY):
 {ff_feed}
 
 FOREX FACTORY ECONOMIC CALENDAR (RECENT PAST RELEASES WITH ACTUAL DATA):
@@ -501,24 +529,27 @@ FOREX FACTORY ECONOMIC CALENDAR (RECENT PAST RELEASES WITH ACTUAL DATA):
 FOREX FACTORY ECONOMIC CALENDAR (UPCOMING SCHEDULED HIGH-IMPACT CATALYSTS - IN BST):
 {upcoming_cal_feed}
 
-GLOBAL FINANCIAL & COMMODITY WIRE DISPATCHES (PAST 7 TO 30 DAYS MACRO SPECTRUM):
+GLOBAL FINANCIAL & COMMODITY WIRE DISPATCHES (STRICTLY UNIQUE HIGH-IMPACT NEWS - DEDUPLICATED AGAINST FOREXFACTORY):
 {wire_feed_30d}
 
 CRITICAL TASK & INSTRUCTIONS:
 Provide a robust, institutional-grade market analysis and movement prediction for {name} in fluent, professional Bengali.
 Ensure that:
-1. Data Horizon: Synthesize active macro & market catalysts from the past 7 to 30 days whose impact is still actively anchoring the current trend.
-2. Time Horizon Definitions: Clearly define the exact time horizon for Short-Term (১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ) and Long-Term (২ সপ্তাহ থেকে ১–৩ মাস / Q4).
-3. Explicit Catalyst Detailing: In Section 2, DO NOT write a single vague narrative paragraph. Every key news item must be EXPLICITLY and SEPARATELY presented with:
+1. Strict Impact & Deduplication Filter:
+   - ForexFactory থেকে শুধুমাত্র High (🔴) এবং Medium (🟠) ইমপ্যাক্ট নিউজগুলো বিশ্লেষণ করতে হবে (কোনো Low বা কম গুরুত্বপূর্ণ নিউজ রাখা যাবে না)।
+   - অন্যান্য সোর্স (Wire / Reuters / WSJ / Bloomberg / FXStreet) থেকে শুধুমাত্র High Impact (🔴) নিউজ দেখাতে হবে, এবং তা কেবল তখনই দেখাবে যদি সেটি ForexFactory-এর সংবাদের সাথে ডুপ্লিকেট বা ওভারল্যাপ না করে (ForexFactory-তে যা এসেছে তা অন্য সোর্স থেকে পুনরায় দেখানো যাবে না)।
+2. Data Horizon: Synthesize active macro & market catalysts from the past 7 to 30 days whose impact is still actively anchoring the current trend.
+3. Time Horizon Definitions: Clearly define the exact time horizon for Short-Term (১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ) and Long-Term (২ সপ্তাহ থেকে ১–৩ মাস / Q4).
+4. Explicit Catalyst Detailing: In Section 2, DO NOT write a single vague narrative paragraph. Every key news item must be EXPLICITLY and SEPARATELY presented with:
    - Specific Headline (খবরের সঠিক শিরোনাম)
    - Publication Date & Time in BST (বাংলাদেশ সময়)
-   - Source & Impact level (যেমন: Forex Factory [🔴 HIGH], Reuters, Bloomberg, WSJ)
+   - Source & Impact level (যেমন: Forex Factory [🔴 HIGH / 🟠 MEDIUM], Reuters [🔴 HIGH], Bloomberg [🔴 HIGH], WSJ [🔴 HIGH])
    - Price reaction & immediate market impact
    - ⌛ Impact Expiry Horizon (কখন/কতদিন পর প্রভাব শেষ বা স্তিমিত হবে)
    - 🔄 Next Follow-up / Recurrence Schedule (পরবর্তী আপডেট বা অফিশিয়াল ডেটা বাংলাদেশ সময় কবে আসবে)
-4. Do NOT omit any news from yesterday (২৪ সেপ্টেম্বর) or today (২৫ সেপ্টেম্বর). All major recent headlines from the feed above must be itemized.
-5. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
-6. All times must strictly be in Bangladesh Time (BST / GMT+6).
+5. Do NOT omit any High/Medium news from yesterday (২৪ সেপ্টেম্বর) or today (২৫ সেপ্টেম্বর). All major recent headlines from the feed above must be itemized.
+6. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
+7. All times must strictly be in Bangladesh Time (BST / GMT+6).
 
 ### MANDATORY REPORT STRUCTURE:
 

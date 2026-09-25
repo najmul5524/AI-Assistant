@@ -178,7 +178,26 @@ def fetch_forexfactory_oil_stories(limit: int = 35) -> List[Dict[str, Any]]:
             if norm not in seen:
                 seen.add(norm)
                 impact = s.get("impact", "").strip().lower()
-                impact_label = "🔴 HIGH" if impact == "high" else ("🟠 MEDIUM" if impact == "medium" else ("🟡 LOW" if impact == "low" else "NORMAL"))
+
+                # STRICT RULE: Exclude explicit LOW impact news!
+                if impact == "low":
+                    continue
+
+                # Must be High or Medium, OR critical energy/geopolitical catalyst
+                is_explicit_high_med = impact in ["high", "medium"]
+                is_critical_energy_catalyst = any(k in t_lower for k in [
+                    "hormuz", "blockade", "opec", "iran war", "sanction", "emergency",
+                    "truce", "missile", "drone", "refiner", "diesel export", "crude oil export losses"
+                ])
+
+                if not (is_explicit_high_med or is_critical_energy_catalyst):
+                    continue
+
+                if impact == "high" or any(k in t_lower for k in ["hormuz", "blockade", "iran war", "missile", "opec"]):
+                    impact_label = "🔴 HIGH"
+                else:
+                    impact_label = "🟠 MEDIUM"
+
                 item_dict = {
                     "title": s["title"],
                     "impact_label": impact_label,
@@ -186,23 +205,11 @@ def fetch_forexfactory_oil_stories(limit: int = 35) -> List[Dict[str, Any]]:
                     "published_dt": s.get("published_dt"),
                     "source": s.get("source", "Forex Factory")
                 }
+                prioritized.append(item_dict)
 
-                # Priority: Any news within last 48 hours (today & yesterday) or High/Medium impact
-                dt = s.get("published_dt")
-                if (dt and dt >= cutoff_48h) or impact in ["high", "medium"]:
-                    prioritized.append(item_dict)
-                else:
-                    others.append(item_dict)
-
-    # Sort each group chronologically
+    # Sort chronologically
     prioritized.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-    others.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-
-    # Retain ALL prioritized items, and fill any remaining quota with older items
-    remaining_slots = max(0, limit - len(prioritized))
-    combined = others[-remaining_slots:] + prioritized if remaining_slots > 0 else prioritized
-    combined.sort(key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
-    return combined
+    return prioritized[-limit:]
 
 def fetch_forexfactory_energy_calendar() -> Dict[str, List[Dict[str, Any]]]:
     """
@@ -261,12 +268,12 @@ def fetch_forexfactory_energy_calendar() -> Dict[str, List[Dict[str, Any]]]:
         "upcoming": upcoming[:6]
     }
 
-def fetch_global_oil_wire_news(limit: int = 28) -> List[Dict[str, Any]]:
+def fetch_global_oil_wire_news(limit: int = 25, ff_reference_titles: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """
     Fetches oil commodity wire articles across:
     1. Past 7 days (when:7d) for recent market price action and catalysts
     2. Past 30 days (when:30d) for structural supply/demand and geopolitical policies still actively anchoring the trend
-    Uses 3-tier time-horizon bucketing (Last 48h, Days 3-7, Days 8-30) to guarantee yesterday's and past week's news are NEVER starved.
+    Strictly filters for HIGH IMPACT only, and DEDUPLICATES against ForexFactory titles.
     """
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     articles = []
@@ -291,15 +298,6 @@ def fetch_global_oil_wire_news(limit: int = 28) -> List[Dict[str, Any]]:
                         continue
 
                     raw_title = html_lib.unescape(title_el.text).strip()
-                    norm = raw_title.lower().strip()
-                    if norm in seen:
-                        continue
-                    seen.add(norm)
-
-                    pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
-                    dt_obj = forex_news_monitor.parse_article_date(pub_str)
-                    pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)") if dt_obj else pub_str
-
                     source_name = "Commodity Wire"
                     if " - " in raw_title:
                         parts = raw_title.rsplit(" - ", 1)
@@ -308,11 +306,36 @@ def fetch_global_oil_wire_news(limit: int = 28) -> List[Dict[str, Any]]:
                     else:
                         clean_head = raw_title
 
+                    norm = clean_head.lower().strip()
+                    if norm in seen:
+                        continue
+
+                    # Deduplication: Drop if already covered by ForexFactory
+                    if ff_reference_titles and forex_news_monitor.is_duplicate_story(clean_head, ff_reference_titles):
+                        continue
+
+                    # STRICT FILTER: High Impact only
+                    is_high = any(k in norm for k in [
+                        "war", "truce", "ceasefire", "strike", "attack", "missile", "drone",
+                        "hormuz", "blockade", "sanction", "emergency", "crisis", "surge",
+                        "plunge", "record high", "record low", "opec", "quota", "cut forecast",
+                        "diesel export", "rates hit record", "tanker", "houthis", "saudi oil supply",
+                        "us-iran", "crude stays above", "iran crisis"
+                    ])
+                    if not is_high:
+                        continue
+
+                    seen.add(norm)
+                    pub_str = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
+                    dt_obj = forex_news_monitor.parse_article_date(pub_str)
+                    pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y (%A)") if dt_obj else pub_str
+
                     articles.append({
                         "title": clean_head,
                         "source": source_name,
                         "pub_date_dhaka": pub_dhaka,
-                        "published_dt": dt_obj
+                        "published_dt": dt_obj,
+                        "impact_label": "🔴 HIGH"
                     })
         except Exception as e:
             logger.debug(f"Google news query '{q}' note: {e}")
@@ -339,8 +362,7 @@ def fetch_global_oil_wire_news(limit: int = 28) -> List[Dict[str, Any]]:
     b_30d.sort(key=lambda x: x["published_dt"] or now_utc)
 
     # Multi-horizon representative sampling:
-    # Up to 12 from last 48h (today & yesterday), up to 8 from days 3-7, up to 8 from days 8-30
-    selected = b_30d[-8:] + b_7d[-8:] + b_48h[-12:]
+    selected = b_30d[-6:] + b_7d[-8:] + b_48h[-10:]
     selected.sort(key=lambda x: x["published_dt"] or now_utc)
     return selected
 
@@ -350,7 +372,8 @@ def fetch_chronological_oil_news(max_items: int = 25) -> List[Dict[str, Any]]:
     and Commodity Wire.
     """
     ff = fetch_forexfactory_oil_stories(limit=15)
-    wire = fetch_global_oil_wire_news(limit=15)
+    ff_titles = [s["title"] for s in ff]
+    wire = fetch_global_oil_wire_news(limit=15, ff_reference_titles=ff_titles)
     combined = ff + wire
     combined.sort(
         key=lambda x: x.get("published_dt") or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
@@ -365,11 +388,12 @@ def generate_oil_prediction_analysis() -> str:
     into a comprehensive Short-Term and Long-Term movement prediction.
     """
     metrics = fetch_oil_market_metrics()
-    ff_stories = fetch_forexfactory_oil_stories(limit=30)
+    ff_stories = fetch_forexfactory_oil_stories(limit=25)
+    ff_reference_titles = [s["title"] for s in ff_stories]
     cal_data = fetch_forexfactory_energy_calendar()
     recent_cal = cal_data.get("recent", [])
     upcoming_cal = cal_data.get("upcoming", [])
-    wire_news = fetch_global_oil_wire_news(limit=28)
+    wire_news = fetch_global_oil_wire_news(limit=20, ff_reference_titles=ff_reference_titles)
 
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     dhaka_now = datetime.datetime.now(dhaka_tz).strftime("%I:%M %p, %d %B %Y (%A)")
@@ -383,7 +407,7 @@ def generate_oil_prediction_analysis() -> str:
     wti_line = f"WTI Crude (CL=F): ${wti.get('current_price', 'N/A')} ({wti.get('change_pct', 0):+}% | 24h High: ${wti.get('high_24h', 'N/A')} | 24h Low: ${wti.get('low_24h', 'N/A')} | RSI: {wti.get('rsi', 'N/A')} | EMA20: ${wti.get('ema20', 'N/A')} | ATR: ${wti.get('atr', 'N/A')})"
     brent_line = f"Brent Crude (BZ=F): ${brent.get('current_price', 'N/A')} ({brent.get('change_pct', 0):+}% | 24h High: ${brent.get('high_24h', 'N/A')} | 24h Low: ${brent.get('low_24h', 'N/A')} | RSI: {brent.get('rsi', 'N/A')} | EMA20: ${brent.get('ema20', 'N/A')} | ATR: ${brent.get('atr', 'N/A')})"
 
-    # 2. ForexFactory Breaking Stories with Period Tags
+    # 2. ForexFactory Breaking Stories with Period Tags (High & Medium impact only)
     ff_lines = []
     for it in ff_stories:
         dt = it.get("published_dt")
@@ -402,7 +426,7 @@ def generate_oil_prediction_analysis() -> str:
         upcoming_cal_lines.append(f"• [{u['time_dhaka']}] [🔴 {u['impact'].upper()}] {u['country']} - {u['title']} | Forecast: {u['forecast']} | Previous: {u['previous']}")
     upcoming_cal_feed = "\n".join(upcoming_cal_lines) if upcoming_cal_lines else "Upcoming scheduled inventory catalysts active."
 
-    # 4. Commodity Wire Dispatches with Period Tags
+    # 4. Commodity Wire Dispatches with Period Tags (Unique High-impact only)
     wire_lines = []
     for w in wire_news:
         dt = w.get("published_dt")
@@ -412,7 +436,7 @@ def generate_oil_prediction_analysis() -> str:
             w_tag = " [গত ৩–৭ দিন]"
         else:
             w_tag = " [গত ৮–৩০ দিন ম্যাক্রো ভিত্তি]"
-        wire_lines.append(f"• [{w['pub_date_dhaka']}]{w_tag} ({w['source']}) {w['title']}")
+        wire_lines.append(f"• [{w['pub_date_dhaka']}]{w_tag} [{w.get('impact_label', '🔴 HIGH')}] ({w['source']}) {w['title']}")
     wire_feed_30d = "\n".join(wire_lines) if wire_lines else "Global wire dispatches (7–30 days) active."
 
     prompt = f"""You are the Chief Global Commodities Strategist & Senior Energy Macro Analyst at a top Wall Street institutional trading desk.
@@ -422,7 +446,7 @@ LIVE OIL MARKET TECHNICAL DATA:
 - {wti_line}
 - {brent_line}
 
-FOREX FACTORY DIRECT BREAKING NEWS & GEOPOLITICAL HEADLINES (INCLUDING HIGH & MEDIUM IMPACT):
+FOREX FACTORY DIRECT BREAKING NEWS (STRICTLY HIGH & MEDIUM IMPACT ONLY):
 {ff_feed}
 
 FOREX FACTORY ECONOMIC CALENDAR (RECENT INVENTORIES & SUPPLY RELEASES):
@@ -431,24 +455,27 @@ FOREX FACTORY ECONOMIC CALENDAR (RECENT INVENTORIES & SUPPLY RELEASES):
 FOREX FACTORY ECONOMIC CALENDAR (UPCOMING SCHEDULED HIGH-IMPACT ENERGY CATALYSTS - IN BST):
 {upcoming_cal_feed}
 
-GLOBAL COMMODITY WIRE DISPATCHES (PAST 7 TO 30 DAYS MACRO SPECTRUM):
+GLOBAL COMMODITY WIRE DISPATCHES (STRICTLY UNIQUE HIGH-IMPACT NEWS - DEDUPLICATED AGAINST FOREXFACTORY):
 {wire_feed_30d}
 
 CRITICAL TASK & INSTRUCTIONS:
 Provide a robust, comprehensive, institutional movement prediction for Crude Oil (WTI & Brent) in professional, fluent Bengali.
 Ensure that:
-1. Data Horizon: Synthesize active macro & market catalysts from the past 7 to 30 days (such as geopolitical premiums, Hormuz naval developments, OPEC+ production policies, and US refining actions) whose impact is still actively anchoring the current trend.
-2. Time Horizon Definitions: Clearly define the exact time horizon for Short-Term (১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ) and Long-Term (২ সপ্তাহ থেকে ১–৩ মাস / Q4).
-3. Explicit Catalyst Detailing: In Section 2, DO NOT write a single vague narrative paragraph. Every key news item must be EXPLICITLY and SEPARATELY presented with:
+1. Strict Impact & Deduplication Filter:
+   - ForexFactory থেকে শুধুমাত্র High (🔴) এবং Medium (🟠) ইমপ্যাক্ট নিউজগুলো বিশ্লেষণ করতে হবে (কোনো Low বা কম গুরুত্বপূর্ণ নিউজ রাখা যাবে না)।
+   - অন্যান্য সোর্স (Wire / Reuters / WSJ / Bloomberg) থেকে শুধুমাত্র High Impact (🔴) নিউজ দেখাতে হবে, এবং তা কেবল তখনই দেখাবে যদি সেটি ForexFactory-এর সংবাদের সাথে ডুপ্লিকেট বা ওভারল্যাপ না করে (ForexFactory-তে যা এসেছে তা অন্য সোর্স থেকে পুনরায় দেখানো যাবে না)।
+2. Data Horizon: Synthesize active macro & market catalysts from the past 7 to 30 days (such as geopolitical premiums, Hormuz naval developments, OPEC+ production policies, and US refining actions) whose impact is still actively anchoring the current trend.
+3. Time Horizon Definitions: Clearly define the exact time horizon for Short-Term (১–৩ দিন / সর্বোচ্চ ১ সপ্তাহ) and Long-Term (২ সপ্তাহ থেকে ১–৩ মাস / Q4).
+4. Explicit Catalyst Detailing: In Section 2, DO NOT write a single vague narrative paragraph. Every key news item must be EXPLICITLY and SEPARATELY presented with:
    - Specific Headline (খবরের সঠিক শিরোনাম)
    - Publication Date & Time in BST (বাংলাদেশ সময়)
-   - Source & Impact level (যেমন: Forex Factory [🔴 HIGH], Reuters, WSJ)
+   - Source & Impact level (যেমন: Forex Factory [🔴 HIGH / 🟠 MEDIUM], Reuters [🔴 HIGH], WSJ [🔴 HIGH])
    - Price reaction & immediate market impact
    - ⌛ Impact Expiry Horizon (কখন/কতদিন পর প্রভাব শেষ বা স্তিমিত হবে)
    - 🔄 Next Follow-up / Recurrence Schedule (পরবর্তী আপডেট বা অফিশিয়াল ডেটা বাংলাদেশ সময় কবে আসবে)
-4. Do NOT omit any news from yesterday (২৪ সেপ্টেম্বর) or today (২৫ সেপ্টেম্বর). All major recent headlines from the feed above must be itemized.
-5. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
-6. All times must strictly be in Bangladesh Time (BST / GMT+6).
+5. Do NOT omit any High/Medium news from yesterday (২৪ সেপ্টেম্বর) or today (২৫ সেপ্টেম্বর). All major recent headlines from the feed above must be itemized.
+6. Upcoming High-Impact Catalysts: Detail upcoming events that could cause major volatility or trend change, with exact dates and times in বাংলাদেশ সময় (BST / GMT+6).
+7. All times must strictly be in Bangladesh Time (BST / GMT+6).
 
 ### EXACT REPORT STRUCTURE:
 

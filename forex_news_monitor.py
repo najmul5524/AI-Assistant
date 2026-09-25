@@ -40,8 +40,8 @@ from llm_manager import MultiTierLLMManager
 
 logger = logging.getLogger(__name__)
 
-# Maximum age for an article to be eligible for instant breaking news alerts (20 minutes)
-MAX_BREAKING_NEWS_AGE_MINUTES = 20.0
+# Maximum age for an article to be eligible for instant breaking news alerts (60 minutes)
+MAX_BREAKING_NEWS_AGE_MINUTES = 60.0
 MAX_BREAKING_NEWS_AGE_HOURS = MAX_BREAKING_NEWS_AGE_MINUTES / 60.0
 
 # Secondary institutional RSS fallback feeds
@@ -98,17 +98,43 @@ def parse_article_date(date_str: str) -> Optional[datetime.datetime]:
 
     return None
 
-def fetch_forexfactory_direct_news(limit: int = 30) -> List[Dict[str, Any]]:
+def is_duplicate_story(title_candidate: str, reference_titles: List[str]) -> bool:
+    """
+    Checks if title_candidate refers to the same underlying event as any title in reference_titles.
+    Uses normalized keyword set intersection.
+    """
+    stop_words = {
+        "the", "a", "an", "in", "on", "at", "to", "for", "of", "and", "or",
+        "is", "are", "was", "were", "as", "by", "with", "after", "amid",
+        "says", "said", "over", "from", "into", "that", "this", "will", "would",
+        "could", "should", "not", "new", "news", "report", "reports", "today"
+    }
+    cand_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', title_candidate.lower())) - stop_words
+    if not cand_words:
+        return False
+
+    for ref in reference_titles:
+        ref_words = set(re.findall(r'\b[a-zA-Z]{3,}\b', ref.lower())) - stop_words
+        if not ref_words:
+            continue
+        common = cand_words.intersection(ref_words)
+        if len(common) >= 3 or (len(common) >= 2 and len(common) / min(len(cand_words), len(ref_words)) >= 0.5):
+            return True
+    return False
+
+def fetch_forexfactory_direct_news(limit: int = 50) -> List[Dict[str, Any]]:
     """
     Priority #1: Directly scrape real-time breaking news from https://www.forexfactory.com/news
-    using curl_cffi Safari 15.5 impersonation (bypasses Cloudflare with zero lag).
+    using curl_cffi Safari 15.5 impersonation with timestamp cache-buster to prevent any stale cache.
     Extracts exact headline, source, impact level ('high', 'medium', 'low', ''), and timestamp.
+    Sorts strictly newest first.
     """
     if cffi_requests is None:
         logger.warning("curl_cffi is not installed; skipping direct ForexFactory scraper.")
         return []
 
-    url = "https://www.forexfactory.com/news"
+    import time
+    url = f"https://www.forexfactory.com/news?_={int(time.time())}"
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     articles = []
 
@@ -188,28 +214,39 @@ def fetch_forexfactory_direct_news(limit: int = 30) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Error scraping direct ForexFactory news: {e}")
 
+    # Sort strictly newest first
+    articles.sort(
+        key=lambda x: x["published_dt"] or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+        reverse=True
+    )
     return articles[:limit]
 
-def fetch_latest_forex_news(limit: int = 25) -> List[Dict[str, Any]]:
+def fetch_latest_forex_news(limit: int = 35) -> List[Dict[str, Any]]:
     """
     Fetch breaking news articles.
-    Priority #1: Direct ForexFactory live scraper (0-latency).
-    Priority #2: Institutional wire feeds (FXStreet, Investing.com) for redundancy.
+    Priority #1: ForexFactory Direct (Strictly ONLY High and Medium impact news).
+    Priority #2: Secondary institutional feeds (Strictly ONLY High impact news that does NOT match/overlap ForexFactory).
     Deduplicates and sorts strictly newest first.
     """
     seen_titles = set()
     articles = []
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
 
-    # 1. Fetch Priority #1: ForexFactory Direct
-    ff_articles = fetch_forexfactory_direct_news(limit=30)
+    # 1. Fetch Priority #1: ForexFactory Direct (Filter strictly for High and Medium impact)
+    ff_articles = fetch_forexfactory_direct_news(limit=60)
     for a in ff_articles:
-        clean_norm = a["title"].strip().lower()
-        if clean_norm not in seen_titles:
-            seen_titles.add(clean_norm)
-            articles.append(a)
+        impact = a.get("impact", "").lower()
+        # Strictly High and Medium impact news only
+        if impact in ["high", "medium"]:
+            clean_norm = a["title"].strip().lower()
+            if clean_norm not in seen_titles:
+                seen_titles.add(clean_norm)
+                articles.append(a)
+
+    ff_reference_titles = [a["title"] for a in articles]
 
     # 2. Fetch Secondary Feeds (FXStreet, Investing.com)
+    # ONLY High impact news that does NOT match ForexFactory
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept": "application/rss+xml, application/xml, text/xml, */*"
@@ -232,11 +269,26 @@ def fetch_latest_forex_news(limit: int = 25) -> List[Dict[str, Any]]:
                     raw_title = title_el.text.strip()
                     clean_title = raw_title.replace(" - Forex Factory", "").strip()
 
+                    # Deduplication: If already covered by ForexFactory, skip!
+                    if is_duplicate_story(clean_title, ff_reference_titles):
+                        continue
+
                     lower_title = clean_title.lower()
                     if lower_title in seen_titles:
                         continue
-                    seen_titles.add(lower_title)
 
+                    # Filter for High Impact only
+                    title_desc = (clean_title + " " + (desc_el.text if desc_el is not None and desc_el.text else "")).lower()
+                    is_high = any(k in title_desc for k in [
+                        "rate hike", "rate cut", "fomc", "powell", "inflation", "cpi",
+                        "war", "truce", "ceasefire", "strike", "missile", "drone",
+                        "hormuz", "blockade", "sanction", "emergency", "crisis",
+                        "intervention", "surge", "plunge", "record high", "record low"
+                    ])
+                    if not is_high:
+                        continue
+
+                    seen_titles.add(lower_title)
                     link = link_el.text.strip() if link_el is not None and link_el.text else ""
                     pub_date = pub_date_el.text.strip() if pub_date_el is not None and pub_date_el.text else ""
                     desc = desc_el.text.strip() if desc_el is not None and desc_el.text else ""
@@ -259,7 +311,7 @@ def fetch_latest_forex_news(limit: int = 25) -> List[Dict[str, Any]]:
                         "published_dt": dt_obj,
                         "description": desc,
                         "source": source_name,
-                        "impact": "",
+                        "impact": "high",
                         "is_forexfactory": False
                     })
         except Exception as e:

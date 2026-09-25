@@ -1,13 +1,18 @@
 """
 Forex Factory & Institutional Breaking News Monitor & Real-Time AI Analyst
-Continuously monitors high-speed institutional Forex & Macro news feeds (FXStreet, Investing.com, Forex Factory),
-detects breaking market headlines in real time with zero crawl lag,
+Continuously monitors Forex Factory directly via high-speed anti-bot HTTP/2 scraper (Priority #1)
+alongside secondary institutional wire feeds (FXStreet, Investing.com).
+Detects breaking market headlines in real time with zero crawl lag,
+filters strictly for High and Medium impact news with direct/long-term market impact,
 analyzes which instruments will go UP (Bullish) and DOWN (Bearish),
 determines the exact next catalyst/event timeline in Bangladesh Time (BST),
 and dispatches real-time Telegram alerts within seconds.
 """
 
 import sys
+import json
+import html as html_lib
+import re
 import hashlib
 import logging
 import datetime
@@ -16,6 +21,11 @@ import requests
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from typing import List, Dict, Any, Optional
+
+try:
+    from curl_cffi import requests as cffi_requests
+except ImportError:
+    cffi_requests = None
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -30,16 +40,17 @@ from llm_manager import MultiTierLLMManager
 
 logger = logging.getLogger(__name__)
 
-# Direct, zero-latency institutional real-time RSS feeds (no slow search indexers)
-REALTIME_FEEDS = [
+# Maximum age for an article to be eligible for instant breaking news alerts (20 minutes)
+MAX_BREAKING_NEWS_AGE_MINUTES = 20.0
+MAX_BREAKING_NEWS_AGE_HOURS = MAX_BREAKING_NEWS_AGE_MINUTES / 60.0
+
+# Secondary institutional RSS fallback feeds
+SECONDARY_REALTIME_FEEDS = [
     ("FXStreet Breaking", "https://www.fxstreet.com/rss/news"),
     ("Investing.com Forex", "https://www.investing.com/rss/news_25.rss"),
     ("Investing.com Economy", "https://www.investing.com/rss/news_14.rss"),
     ("Investing.com Gold & Commodities", "https://www.investing.com/rss/news_301.rss"),
 ]
-
-# Maximum age for an article to be eligible for instant breaking news alerts (30 minutes)
-MAX_BREAKING_NEWS_AGE_MINUTES = 30.0
 
 _llm_instance: Optional[MultiTierLLMManager] = None
 _ALERTED_CALENDAR_EVENTS = set()
@@ -87,23 +98,114 @@ def parse_article_date(date_str: str) -> Optional[datetime.datetime]:
 
     return None
 
-def fetch_latest_forex_news(limit: int = 15) -> List[Dict[str, Any]]:
+def fetch_forexfactory_direct_news(limit: int = 30) -> List[Dict[str, Any]]:
     """
-    Fetch breaking news articles from zero-latency institutional feeds.
-    Parses timestamps, dedupes titles, and sorts strictly newest first.
+    Priority #1: Directly scrape real-time breaking news from https://www.forexfactory.com/news
+    using curl_cffi Safari 15.5 impersonation (bypasses Cloudflare with zero lag).
+    Extracts exact headline, source, impact level ('high', 'medium', 'low', ''), and timestamp.
     """
+    if cffi_requests is None:
+        logger.warning("curl_cffi is not installed; skipping direct ForexFactory scraper.")
+        return []
+
+    url = "https://www.forexfactory.com/news"
+    dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+    articles = []
+
+    try:
+        s = cffi_requests.Session()
+        resp = s.get(url, impersonate="safari15_5", timeout=8)
+        if resp.status_code != 200 or not resp.text:
+            logger.warning(f"ForexFactory direct scrape returned status {resp.status_code}")
+            return []
+
+        content = resp.text
+        matches = re.findall(r'data-items="([^"]+)"', content)
+        stories_by_id = {}
+
+        for m in matches:
+            try:
+                raw_json = html_lib.unescape(m)
+                items = json.loads(raw_json)
+                for it in items:
+                    st = it if "title" in it else it.get("story", {})
+                    sid = st.get("id")
+                    if sid and sid not in stories_by_id:
+                        stories_by_id[sid] = st
+            except Exception:
+                continue
+
+        for sid, st in stories_by_id.items():
+            raw_title = html_lib.unescape(st.get("title", "")).strip()
+            if not raw_title or len(raw_title) < 5:
+                continue
+
+            ts = st.get("dateline")
+            if ts:
+                dt_utc = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+                dhaka_dt = dt_utc.astimezone(dhaka_tz)
+                pub_date_dhaka = dhaka_dt.strftime("%I:%M %p, %d %b %Y")
+                pub_date_str = dt_utc.strftime("%a, %d %b %Y %H:%M:%S GMT")
+            else:
+                dt_utc = None
+                pub_date_dhaka = ""
+                pub_date_str = ""
+
+            story_url = st.get("url", "")
+            if story_url and not story_url.startswith("http"):
+                story_url = f"https://www.forexfactory.com{story_url}"
+
+            raw_source = st.get("source", "Forex Factory")
+            source_label = f"Forex Factory ({raw_source})"
+
+            impact_val = str(st.get("impact") or "").strip().lower()
+
+            articles.append({
+                "news_id": f"ff_{sid}",
+                "title": raw_title,
+                "link": story_url,
+                "pub_date": pub_date_str,
+                "pub_date_dhaka": pub_date_dhaka,
+                "published_dt": dt_utc,
+                "description": html_lib.unescape(st.get("preview", "")).strip(),
+                "source": source_label,
+                "impact": impact_val, # 'high', 'medium', 'low', or ''
+                "is_forexfactory": True
+            })
+
+    except Exception as e:
+        logger.warning(f"Error scraping direct ForexFactory news: {e}")
+
+    return articles[:limit]
+
+def fetch_latest_forex_news(limit: int = 25) -> List[Dict[str, Any]]:
+    """
+    Fetch breaking news articles.
+    Priority #1: Direct ForexFactory live scraper (0-latency).
+    Priority #2: Institutional wire feeds (FXStreet, Investing.com) for redundancy.
+    Deduplicates and sorts strictly newest first.
+    """
+    seen_titles = set()
+    articles = []
+    dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+
+    # 1. Fetch Priority #1: ForexFactory Direct
+    ff_articles = fetch_forexfactory_direct_news(limit=30)
+    for a in ff_articles:
+        clean_norm = a["title"].strip().lower()
+        if clean_norm not in seen_titles:
+            seen_titles.add(clean_norm)
+            articles.append(a)
+
+    # 2. Fetch Secondary Feeds (FXStreet, Investing.com)
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept": "application/rss+xml, application/xml, text/xml, */*"
     }
 
-    articles = []
-    seen_titles = set()
-    dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
-
-    for source_name, url in REALTIME_FEEDS:
+    for source_name, url in SECONDARY_REALTIME_FEEDS:
         try:
-            resp = requests.get(url, headers=headers, timeout=7)
+            resp = requests.get(url, headers=headers, timeout=6)
             if resp.status_code == 200 and resp.text:
                 root = ET.fromstring(resp.content)
                 for item in root.findall(".//item"):
@@ -118,7 +220,6 @@ def fetch_latest_forex_news(limit: int = 15) -> List[Dict[str, Any]]:
                     raw_title = title_el.text.strip()
                     clean_title = raw_title.replace(" - Forex Factory", "").strip()
 
-                    # Deduplicate headlines
                     lower_title = clean_title.lower()
                     if lower_title in seen_titles:
                         continue
@@ -145,10 +246,12 @@ def fetch_latest_forex_news(limit: int = 15) -> List[Dict[str, Any]]:
                         "pub_date_dhaka": pub_date_dhaka,
                         "published_dt": dt_obj,
                         "description": desc,
-                        "source": source_name
+                        "source": source_name,
+                        "impact": "",
+                        "is_forexfactory": False
                     })
         except Exception as e:
-            logger.warning(f"Error fetching/parsing news RSS from {source_name} ({url}): {e}")
+            logger.debug(f"Error in secondary news feed {source_name}: {e}")
 
     # Sort strictly by publication date, newest first
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -162,8 +265,9 @@ def fetch_latest_forex_news(limit: int = 15) -> List[Dict[str, Any]]:
 def analyze_forex_news_with_ai(headline: str, snippet: str = "") -> str:
     """
     Leverages multi-tier LLM to analyze the breaking Forex news headline.
-    Guarantees explicit separation of which instruments will go UP and DOWN,
-    and calculates the exact timeline of the next catalyst/meeting in Bangladesh Time.
+    Strictly assesses if news is High (🔴) or Medium (🟠) with direct & long-term market influence.
+    If Low (🟡), outputs concise Low classification so it can be filtered out from alerts.
+    If High/Medium, provides full institutional breakdown of Bullish/Bearish instruments and Next Catalyst in BST.
     """
     llm = get_llm()
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
@@ -171,21 +275,28 @@ def analyze_forex_news_with_ai(headline: str, snippet: str = "") -> str:
 
     prompt = f"""You are a Senior Wall Street Institutional Forex & Macroeconomic Analyst.
 Current Bangladesh Time: {dhaka_now} (BST / GMT+6).
-A breaking financial news headline has just been published on Forex Factory / Wire Feeds:
+A breaking financial news headline has just appeared on Forex Factory:
 Headline: "{headline}"
-Additional Context: "{snippet[:300] if snippet else 'N/A'}"
+Context: "{snippet[:300] if snippet else 'N/A'}"
 
-Provide a crisp, actionable, institutional analysis in professional Bengali with these exact sections:
+FIRST, evaluate if this headline represents High Impact (🔴) or Medium Impact (🟠) with direct & long-term market influence (e.g. Interest rates, Central banks, Inflation CPI/PCE, NFP, GDP, Geopolitics, Tariffs, Currency intervention).
+If this news is Low Impact (🟡), educational, theoretical, gossip, or has NO direct market-moving significance, output ONLY:
+🚨 **গুরুত্ব (Importance):** Low 🟡 — [১ বাক্যে কারণ]
+(No further sections needed).
 
-1. 🚨 **গুরুত্ব (Importance):** [High 🔴 / Medium 🟠 / Low 🟡] — এবং ১ বাক্যে সারসংক্ষেপ
+IF AND ONLY IF this is High 🔴 or Medium 🟠 impact news, provide a crisp, actionable analysis in professional Bengali with these exact sections:
+
+1. 🚨 **গুরুত্ব ও ইমপ্যাক্ট (Importance):** [High 🔴 / Medium 🟠] — সরাসরি ও দীর্ঘমেয়াদী প্রভাবের ১ বাক্যে সারসংক্ষেপ
 2. 🟢 **কোন কোন ইন্সট্রুমেন্ট উপরে যাবে (Bullish / Upward Bias):**
-   - 📈 [ইন্সট্রুমেন্টের নাম, যেমন: Gold (XAU/USD), EUR/USD, GBP/USD, USD Index ইত্যাদি] — কেন উপরে যাবে তার কারণ
+   - 📈 [ইন্সট্রুমেন্ট, যেমন: Gold (XAU/USD), EUR/USD, GBP/USD, USD Index ইত্যাদি] — কেন উপরে যাবে তার কারণ
 3. 🔴 **কোন কোন ইন্সট্রুমেন্ট নিচের দিকে যাবে (Bearish / Downward Bias):**
-   - 📉 [ইন্সট্রুমেন্টের নাম, যেমন: USD/JPY, US Dollar (DXY), ক্রুড অয়েল ইত্যাদি] — কেন নিচে নামবে তার কারণ
+   - 📉 [ইন্সট্রুমেন্ট, যেমন: USD/JPY, US Dollar (DXY), Crude Oil ইত্যাদি] — কেন নিচে নামবে তার কারণ
 4. ⏱️ **পরবর্তী ঘটনা ও সময়সূচি (Next Catalyst - বাংলাদেশ সময়):**
-   - [এই নিউজের ধারাবাহিকতায় পরবর্তী ঘটনা কখন ঘটবে — যেমন: সেন্ট্রাল ব্যাংক মিটিং, প্রেস কনফারেন্স, স্পিচ বা পরবর্তী গুরুত্বপূর্ণ ডেটা রিলিজ। **অবশ্যই বাংলাদেশ সময় (BST) অনুযায়ী সুনির্দিষ্ট সময় ও ঘণ্টা-মিনিট উল্লেখ করুন**]
-5. ⏳ **মুভমেন্টের স্থায়িত্ব (Duration) ও রেঞ্জ:** [যেমন: তাৎক্ষণিক ১৫-৩০ মিনিটের স্পাইক / পুরো সেশনের ট্রেন্ড / ৫০-৮০ পিপস বা $১৫-$২৫ মুভ]
-6. 💡 **ট্রেডারদের করণীয় ও সতর্কতা (Actionable Trader Note):** [ট্রেডারদের জন্য সংক্ষিপ্ত ও সুনির্দিষ্ট সতর্কবার্তা]
+   - [এই নিউজের ধারাবাহিকতায় পরবর্তী ঘটনা কখন ঘটবে — যেমন: সেন্ট্রাল ব্যাংক পলিসি মিটিং, স্পিচ, প্রেস কনফারেন্স বা পরবর্তী গুরুত্বপূর্ণ ডেটা। **অবশ্যই বাংলাদেশ সময় (BST) অনুযায়ী সুনির্দিষ্ট সময় ও ঘণ্টা-মিনিট উল্লেখ করুন**]
+5. ⏳ **সরাসরি ও দীর্ঘমেয়াদী প্রভাব (Direct & Long-term Impact):**
+   - [মার্কেটে সরাসরি তাৎক্ষণিক কী প্রভাব পড়বে এবং আগামী দিন বা সপ্তাহে দীর্ঘমেয়াদী প্রভাব কী হবে, মুভমেন্ট রেঞ্জ ও পিপস]
+6. 💡 **ট্রেডারদের করণীয় ও সতর্কতা (Actionable Trader Note):**
+   - [ট্রেডারদের জন্য সংক্ষিপ্ত ও সুনির্দিষ্ট সতর্কবার্তা]
 
 Keep it direct, professional, and clear with clean markdown bullet points."""
 
@@ -199,16 +310,16 @@ Keep it direct, professional, and clear with clean markdown bullet points."""
 def format_news_telegram_alert(news_item: Dict[str, Any], ai_analysis: str) -> str:
     """Format breaking news and AI analysis into a structured Telegram message."""
     title = news_item["title"]
-    source = news_item.get("source", "Forex Factory Wire")
+    source = news_item.get("source", "Forex Factory")
     pub_date = news_item.get("pub_date_dhaka") or news_item.get("pub_date")
 
     msg_lines = [
-        "🚨 *ব্রেকিং মার্কেট নিউজ অ্যালার্ট & রিয়েল-টাইম এআই বিশ্লেষণ*",
+        "⚡ *FOREX FACTORY REAL-TIME BREAKING NEWS & AI ANALYSIS*",
         "",
         f"📰 *শিরোনাম:* `{title}`",
         f"🕒 *প্রকাশের সময়:* _{pub_date} (বাংলাদেশ সময়)_",
         "",
-        "📊 *মার্কেট ইমপ্যাক্ট, ডিরেকশন ও গতিপথ বিশ্লেষণ:*",
+        "📊 *মার্কেট ডিরেকশন ও প্রভাব বিশ্লেষণ:*",
         ai_analysis,
         "",
         f"🌐 _উৎস: {source}_"
@@ -294,19 +405,44 @@ def check_and_alert_calendar_events(telegram_context=None) -> int:
 
     return dispatched
 
+def is_low_impact_analysis(analysis_text: str) -> bool:
+    """
+    Determines if the AI analysis classified the news as Low Impact.
+    Low-impact news is strictly filtered out and never sent to Telegram.
+    """
+    text_clean = analysis_text.strip()
+    # Check explicit Low impact indicators
+    if "Low 🟡" in text_clean or "low 🟡" in text_clean:
+        return True
+    
+    first_two_lines = "\n".join(text_clean.splitlines()[:3]).lower()
+    if "গুরুত্ব (importance): low" in first_two_lines or "গুরুত্ব: low" in first_two_lines:
+        return True
+    if "low 🟡" in first_two_lines:
+        return True
+
+    # Must contain High (🔴) or Medium (🟠) marker to qualify as actionable market-moving news
+    has_high_or_med = ("🔴" in text_clean or "🟠" in text_clean or "high" in first_two_lines or "medium" in first_two_lines)
+    if not has_high_or_med:
+        return True
+
+    return False
+
 def check_and_alert_new_stories(telegram_context=None) -> int:
     """
     Check for new Forex Factory & breaking news stories in real time.
-    If new unseen story is found, analyze with AI and send instant alert.
-    Returns the count of new stories processed.
+    Priority #1 is given to Forex Factory direct feeds.
+    Strictly filters for High and Medium impact news with direct, long-term market influence.
+    If new unseen High/Medium story is found, analyzes with AI and dispatches instant alert.
+    Returns the count of new stories alerted.
     """
-    # Also check scheduled calendar event milestones
+    # Check scheduled calendar event milestones
     try:
         check_and_alert_calendar_events(telegram_context)
     except Exception as cal_err:
         logger.debug(f"Calendar milestone check note: {cal_err}")
 
-    articles = fetch_latest_forex_news(limit=15)
+    articles = fetch_latest_forex_news(limit=25)
     if not articles:
         return 0
 
@@ -330,13 +466,13 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
                 continue
         fresh_unseen.append(art)
 
-    # Check if this is the very first initialization of the table
+    # Check if this is the very first initialization of the database table
     with database.get_connection() as conn:
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM seen_news")
         total_seen = c.fetchone()[0]
 
-    # On first run, mark all except the single latest fresh item to prevent flooding
+    # On first run, mark all except the single latest fresh item to prevent initial flood
     if total_seen == 0 and len(fresh_unseen) > 1:
         logger.info(f"First-time news initialization: marking {len(fresh_unseen)-1} articles as seen.")
         for a in fresh_unseen[1:]:
@@ -345,54 +481,58 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
 
     processed_count = 0
     for art in fresh_unseen:
-        logger.info(f"Analyzing fresh breaking Forex story: {art['title']}")
+        # Pre-filter: If ForexFactory explicitly marked impact as 'low', skip silently
+        if art.get("impact") == "low":
+            logger.info(f"Skipping ForexFactory explicit Low-impact news: {art['title']}")
+            database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
+            continue
+
+        logger.info(f"Analyzing fresh breaking Forex story: {art['title']} (Source: {art['source']})")
         analysis = analyze_forex_news_with_ai(art["title"], art["description"])
-        
-        # Check severity filter: Dispatch instant alert if High/Medium Impact or critical market catalyst
-        title_lower = art["title"].lower()
-        is_critical_keyword = any(k in title_lower for k in [
-            "rate", "hike", "cut", "cpi", "fomc", "fed", "ecb", "boj", "boe",
-            "inflation", "nfp", "gdp", "war", "tariff", "breaking", "urgent",
-            "gold", "oil", "yield", "dollar", "powell", "lagarde", "recession"
-        ])
-        is_high_analysis = "high" in analysis.lower() or "🔴" in analysis or "🟠" in analysis or "উৎস" in analysis
 
-        if is_critical_keyword or is_high_analysis:
-            alert_msg = format_news_telegram_alert(art, analysis)
-            if telegram_context and hasattr(telegram_context, "bot"):
-                for uid in ALLOWED_USER_IDS:
-                    try:
-                        import asyncio
-                        asyncio.create_task(
-                            telegram_context.bot.send_message(
-                                chat_id=uid,
-                                text=alert_msg,
-                                parse_mode="Markdown"
-                            )
+        # Strict Filter: ONLY High and Medium impact news are sent to Telegram!
+        if is_low_impact_analysis(analysis):
+            logger.info(f"Filtered out low-impact / non-direct news from instant alert: {art['title']}")
+            database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
+            continue
+
+        # Format and dispatch High/Medium Impact Alert immediately
+        alert_msg = format_news_telegram_alert(art, analysis)
+        if telegram_context and hasattr(telegram_context, "bot"):
+            for uid in ALLOWED_USER_IDS:
+                try:
+                    import asyncio
+                    asyncio.create_task(
+                        telegram_context.bot.send_message(
+                            chat_id=uid,
+                            text=alert_msg,
+                            parse_mode="Markdown"
                         )
-                    except Exception as send_err:
-                        logger.warning(f"Error sending via bot context: {send_err}")
-                        send_telegram_direct(alert_msg)
-            else:
-                send_telegram_direct(alert_msg)
-            logger.info(f"Dispatched high-impact alert for: {art['title']}")
+                    )
+                except Exception as send_err:
+                    logger.warning(f"Error sending via bot context: {send_err}")
+                    send_telegram_direct(alert_msg)
         else:
-            logger.info(f"Filtered low-impact news from instant alert: {art['title']}")
+            send_telegram_direct(alert_msg)
 
+        logger.info(f"⚡ Instant High/Medium impact Telegram alert dispatched for: {art['title']}")
         database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"])
         processed_count += 1
 
     return processed_count
 
 if __name__ == "__main__":
-    print("Testing Forex News Monitor...")
+    print("Testing Forex News Monitor with Direct ForexFactory Scraper...")
     items = fetch_latest_forex_news(limit=5)
     print(f"Fetched {len(items)} items:")
     for i, it in enumerate(items, 1):
-        print(f"{i}. [{it['source']}] {it['title']} ({it['pub_date_dhaka']})")
-    
+        impact_tag = f"[{it.get('impact').upper()}]" if it.get('impact') else ""
+        print(f"{i}. [{it['source']}] {impact_tag} {it['title']} ({it['pub_date_dhaka']})")
+
     if items:
-        print("\nTesting AI Analysis on latest item:")
-        print("Item:", items[0]["title"])
-        res = analyze_forex_news_with_ai(items[0]["title"], items[0]["description"])
+        # Pick the first non-low item for testing
+        test_item = next((it for it in items if it.get("impact") != "low"), items[0])
+        print(f"\nTesting AI Analysis on item: {test_item['title']}")
+        res = analyze_forex_news_with_ai(test_item["title"], test_item["description"])
         print("\nAnalysis Result:\n", res)
+        print("\nIs Low Impact Filtered?:", is_low_impact_analysis(res))

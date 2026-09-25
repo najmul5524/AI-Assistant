@@ -17,6 +17,25 @@ class TestForexNewsMonitor(unittest.TestCase):
         self.assertIn("pub_date", first)
         self.assertTrue(len(first["title"]) > 5)
 
+    def test_fetch_forexfactory_direct_news(self):
+        items = forex_news_monitor.fetch_forexfactory_direct_news(limit=5)
+        self.assertIsInstance(items, list)
+        if items:
+            first = items[0]
+            self.assertTrue(first.get("is_forexfactory"))
+            self.assertTrue(first["news_id"].startswith("ff_"))
+            self.assertIn("title", first)
+            self.assertIn("published_dt", first)
+
+    def test_is_low_impact_analysis(self):
+        low_text = "🚨 **গুরুত্ব (Importance):** Low 🟡 — এটি একটি তাত্ত্বিক আলোচনা যার কোনো তাৎক্ষণিক প্রভাব নেই।"
+        high_text = "1. 🚨 **গুরুত্ব ও ইমপ্যাক্ট (Importance):** High 🔴 — ইউএসডি/জেপিওয়াই পেয়ারে বড় পতন ঘটাতে পারে।"
+        med_text = "1. 🚨 **গুরুত্ব ও ইমপ্যাক্ট (Importance):** Medium 🟠 — ইউরোপীয় কেন্দ্রীয় ব্যাংকের পলিসিতে প্রভাব।"
+        
+        self.assertTrue(forex_news_monitor.is_low_impact_analysis(low_text))
+        self.assertFalse(forex_news_monitor.is_low_impact_analysis(high_text))
+        self.assertFalse(forex_news_monitor.is_low_impact_analysis(med_text))
+
     def test_database_news_deduplication(self):
         dummy_id = "test_dummy_news_id_123"
         dummy_title = "US Core PCE MoM increases 0.3%"
@@ -31,10 +50,12 @@ class TestForexNewsMonitor(unittest.TestCase):
             "title": "Fed Powell Signals Cautious Rate Cuts Ahead",
             "pub_date": "Fri, 18 Sep 2026 14:30:00 GMT"
         }
-        dummy_analysis = "1. 🚨 **গুরুত্ব:** High 🔴\n2. 🎯 **প্রভাবিত পেয়ার:** EUR/USD, USD/JPY, Gold"
+        dummy_analysis = "1. 🚨 **গুরুত্ব ও ইমপ্যাক্ট:** High 🔴\n2. 🟢 **কোন কোন ইন্সট্রুমেন্ট উপরে যাবে:** Gold (XAU/USD)"
         alert = forex_news_monitor.format_news_telegram_alert(dummy_item, dummy_analysis)
         self.assertIn("Fed Powell Signals Cautious Rate Cuts Ahead", alert)
         self.assertIn("High 🔴", alert)
+        self.assertIn("Gold (XAU/USD)", alert)
+
     def test_parse_article_date(self):
         date_str = "Wed, 16 Sep 2026 19:00:36 GMT"
         dt = forex_news_monitor.parse_article_date(date_str)
@@ -53,4 +74,3 @@ class TestForexNewsMonitor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -24,11 +24,11 @@ CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
 
 # Model preferences
 GEMINI_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-flash-latest",
     "gemini-3.8-flash",
     "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-flash-latest"
+    "gemini-3.6-flash"
 ]
 
 GITHUB_MODELS = [
@@ -72,7 +72,7 @@ _forex_curr_raw = os.getenv("FOREX_CURRENCIES", "USD,EUR,GBP,JPY,AUD,CAD,CHF,NZD
 FOREX_CURRENCIES = [c.strip().upper() for c in _forex_curr_raw.split(",") if c.strip()]
 FOREX_REMINDER_MINUTES = int(os.getenv("FOREX_REMINDER_MINUTES", "15"))
 FOREX_DAILY_SYNC_TIME = os.getenv("FOREX_DAILY_SYNC_TIME", "06:30").strip()
-FOREX_NEWS_CHECK_INTERVAL = int(os.getenv("FOREX_NEWS_CHECK_INTERVAL", "30")) # 30 seconds for real-time news alerts
+FOREX_NEWS_CHECK_INTERVAL = int(os.getenv("FOREX_NEWS_CHECK_INTERVAL", "20")) # 20 seconds for real-time news alerts
 
 # Reports Output Directory
 REPORTS_DIR = BASE_DIR / "reports"

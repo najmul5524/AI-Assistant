@@ -519,15 +519,19 @@ async def news_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     status_msg = await update.message.reply_text("⏳ Forex Factory থেকে সর্বশেষ ব্রেকিং নিউজ সংগ্রহ ও এআই এনালাইসিস করা হচ্ছে...", parse_mode=ParseMode.MARKDOWN)
 
-    articles = forex_news_monitor.fetch_latest_forex_news(limit=3)
+    articles = forex_news_monitor.fetch_latest_forex_news(limit=10)
     if not articles:
         await status_msg.edit_text("❌ এই মুহূর্তে কোনো নতুন ফরেক্স নিউজ পাওয়া যায়নি।")
         return
 
-    latest = articles[0]
+    # Select freshest High/Medium impact story (skip explicit low-impact)
+    target_article = next((a for a in articles if a.get("impact") in ["high", "medium"]), None)
+    if not target_article:
+        target_article = next((a for a in articles if a.get("impact") != "low"), articles[0])
+
     # Run analysis
-    analysis = forex_news_monitor.analyze_forex_news_with_ai(latest["title"], latest["description"])
-    alert_msg = forex_news_monitor.format_news_telegram_alert(latest, analysis)
+    analysis = forex_news_monitor.analyze_forex_news_with_ai(target_article["title"], target_article["description"])
+    alert_msg = forex_news_monitor.format_news_telegram_alert(target_article, analysis)
 
     try:
         await status_msg.edit_text(alert_msg, parse_mode=ParseMode.MARKDOWN)

@@ -168,11 +168,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⚡ **Multi-Tier Fallback:** ফ্রি লিমিট নিয়ে চিন্তা নেই! এক প্রোভাইডারের কোটা শেষ হলে স্বয়ংক্রিয়ভাবে ব্যাকআপে সুইচ করব।\n\n"
         f"🎙️ **ভয়েস মেসেজ সাপোর্ট:** আপনি চাইলে টাইপ না করে টেলিগ্রামে সরাসরি বাংলায় মুখে কথা বলে ভয়েস পাঠাতে পারেন! আমি আপনার কথা শুনে সাথে সাথে কাজ করব।\n\n"
         f"📌 *গুরুত্বপূর্ণ কমান্ডসমূহ:*\n"
+        f"• `/nextday` বা `/forecast` - সমস্ত রিলেটেড নিউজের গ্র্যাভিটি মার্কিং (১-১০ স্কেল) ও আগামীকালের মার্কেট মুভমেন্ট প্রেডিকশন (উপরে যাবে 📈 নাকি নিচে নামবে 📉)\n"
+        f"• `/weekly` বা `/week` (বা `/forex_pdf`) - সপ্তাহ শুরুর আগের দিন পুরো সপ্তাহের প্রাতিষ্ঠানিক ইন্টেলিজেন্স ও প্রাইস মুভমেন্ট পূর্বাভাস রিপোর্ট\n"
+        f"• `/gravity [সিম্বল]` বা `/predict [সিম্বল]` - নির্দিষ্ট কোনো অ্যাসেটের খবরের গ্র্যাভিটি বিশ্লেষণ (১-১০) ও পরবর্তী ডিরেকশন (যেমন: `/gravity gold`, `/gravity oil`, `/gravity nasdaq`)\n"
         f"• `/ta [সিম্বল] [টাইমফ্রেম]` - লাইভ ক্যান্ডেলের নিখুঁত ব্যবচ্ছেদ (Dissection), ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল (যেমন `/ta gold`, `/ta btc 5m`)\n"
-        f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd` - লাইভ টেকনিক্যাল ডেটা, পর্যায়ক্রমিক খবরের গতিপথ ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন\n"
-        f"• `/forecast` - আগামীকালের গোল্ড, মেটাল, ফিউচার্স ও ফরেক্স প্রাইস মুভমেন্ট পূর্বাভাস\n"
+        f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd` - লাইভ টেকনিক্যাল মেট্রিক্স, পর্যায়ক্রমিক খবরের গতিপথ ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন\n"
         f"• `/digest` - দৈনিক একীভূত ম্যাক্রো ডাইজেস্ট ও সেন্টিমেন্ট\n"
-        f"• `/forex_pdf` - সাপ্তাহিক প্রাতিষ্ঠানিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট\n"
+        f"• `/forecast_pdf` - চার্টসহ আগামীকালের মার্কেট পূর্বাভাস PDF\n"
         f"• `/news` - ব্রেকিং ফরেক্স নিউজ ও লাইভ এআই মার্কেট এনালাইসিস\n"
         f"• `/forex` - আজকের গুরুত্বপূর্ণ ফরেক্স ক্যালেন্ডার দেখা\n"
         f"• `/forex_sync` - Google Calendar-এ নিউজ রিমাইন্ডার সিঙ্ক করা\n"
@@ -198,11 +200,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 *{BOT_NAME} কমান্ড গাইড*\n\n"
         f"• **সাধারণ চ্যাট:** যেকোনো প্রশ্ন বা টেকনিক্যাল বিশ্লেষণ সরাসরি বাংলায় লিখে চান (যেমন: *'গোল্ডের ক্যান্ডেল ব্যবচ্ছেদ কর'*, *'BTC 15m সিগনাল দাও'*, *'Nasdaq prediction'*, *'S&P 500 এনালাইসিস'*)\n"
-        f"• `/ta [সিম্বল] [টাইমফ্রেম]` বা `/signal`: ক্যান্ডেলস্টিকের মাইক্রোস্কোপিক ব্যবচ্ছেদ (Anatomy Breakdown), সময়ের সাথে ক্যান্ডেল কিভাবে তৈরি হলো (ইন্ট্রা-ক্যান্ডেল গঠনপ্রক্রিয়া), পূর্ববর্তী High/Low সুইপ বনাম ব্রেকআউট এবং এন্ট্রি, স্টপ লস ও টেক প্রফিটসহ হাই-কনভিকশন সিগন্যাল। (উদাহরণ: `/ta`, `/ta btc`, `/ta gold 5m`, `/ta eurusd 1h`)\n"
-        f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd`: বর্তমান বাজার পরিস্থিতি, লাইভ টেকনিক্যাল মেট্রিক্স (RSI, EMA, ATR), খবরের কালানুক্রমিক গতিপথ (Sequential Catalyst Trajectory) ও প্রাতিষ্ঠানিক শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন।\n"
-        f"• `/forecast` বা `/prediction` বা `/digest`: সারাদিনের সমস্ত নিউজ, গোল্ড (Gold), সিলভার (Silver), ফিউচার্স (S&P 500, Crude Oil) ও X.com সেন্টিমেন্ট বিশ্লেষণ করে আগামীকালের বিস্তারিত প্রাইস মুভমেন্ট পূর্বাভাস।\n"
-        f"• `/forex_pdf`: সরাসরি পূর্ণাঙ্গ প্রাতিষ্ঠানিক সাপ্তাহিক ফরেক্স ইন্টেলিজেন্স PDF রিপোর্ট তৈরি ও ডাউনলোড।\n"
-        f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)। (`/news gold` বা `/news oil` দিয়েও নির্দিষ্ট অ্যাসেটের প্রেডিকশন পাওয়া যাবে)\n"
+        f"• `/nextday` বা `/forecast` বা `/prediction`: সমস্ত রিলেটেড নিউজের গ্র্যাভিটি মার্কিং (১–১০ স্কেল), এক্সপেক্টেড রেঞ্জ ও আগামীকালের নিশ্চিত মার্কেট ডিরেকশন (উপরে যাবে 📈 নাকি নিচে নামবে 📉)।\n"
+        f"• `/weekly` বা `/week` বা `/forex_pdf`: সপ্তাহ শুরুর আগের দিন রবিবার রাতে পুরো সপ্তাহের প্রাতিষ্ঠানিক গাইডলাইন, হাই-ইমপ্যাক্ট ইভেন্ট ও মাল্টি-অ্যাসেট মুভমেন্ট রোডম্যাপ।\n"
+        f"• `/gravity [সিম্বল]` বা `/predict [সিম্বল]`: নির্দিষ্ট অ্যাসেটের খবরের গ্র্যাভিটি মার্কিং (১-১০) ও পরবর্তী মুভমেন্ট ভেক্টর (উদাহরণ: `/gravity gold`, `/gravity oil`, `/gravity nasdaq`, `/predict btc`)।\n"
+        f"• `/ta [সিম্বল] [টাইমফ্রেম]` বা `/signal`: ক্যান্ডেলস্টিকের মাইক্রোস্কোপিক ব্যবচ্ছেদ (Anatomy Breakdown), ইন্ট্রা-ক্যান্ডেল গঠনপ্রক্রিয়া, লিকুইডিটি সুইপ ও হাই-কনভিকশন এন্ট্রি/SL/TP সিগন্যাল। (উদাহরণ: `/ta`, `/ta btc`, `/ta gold 5m`, `/ta eurusd 1h`)\n"
+        f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd`: বর্তমান বাজার পরিস্থিতি, লাইভ টেকনিক্যাল মেট্রিক্স (RSI, EMA, ATR), খবরের কালানুক্রমিক গতিপথ ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন।\n"
+        f"• `/forecast_pdf`: চার্ট ও গ্রাফসহ আগামীকালের প্রাতিষ্ঠানিক টেকনিক্যাল রেঞ্জ PDF রিপোর্ট।\n"
+        f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)।\n"
         f"• `/forex`: আজকের High & Medium Impact ফরেক্স ক্যালেন্ডার নিউজ দেখা। (`/forex all` দিয়ে পুরো সপ্তাহেরটা দেখা যাবে)\n"
         f"• `/forex_sync`: আজকের ফরেক্স নিউজ Google Calendar-এ রিমাইন্ডার অ্যালার্টসহ স্বয়ংক্রিয়ভাবে সিঙ্ক করা।\n"
         f"• `/report <বিষয়>`: যেমন `/report এআই ও ভবিষ্যৎ চাকরি বাজার` (পিডিএফ তৈরি হবে)\n"
@@ -601,7 +605,7 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cmd_name = first_token[1:].split("@")[0]
 
     query = ""
-    if cmd_name and cmd_name not in ["market", "analyze", "news"]:
+    if cmd_name and cmd_name not in ["market", "analyze", "news", "gravity", "predict"]:
         query = cmd_name
     elif context.args:
         query = " ".join(context.args).strip()
@@ -747,6 +751,29 @@ async def forecast_pdf_command(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"Failed to generate forecast PDF: {e}")
         await update.message.reply_text(f"❌ পূর্বাভাস PDF তৈরিতে সমস্যা হয়েছে: {str(e)}")
+
+async def gravity_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /gravity, /predict - Run single asset or multi-asset news gravity scoring & directional movement prediction."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    if context.args:
+        # User specified an asset e.g. /gravity gold, /gravity oil, /predict nasdaq
+        await market_command(update, context)
+    else:
+        # Full multi-asset gravity forecast for next day
+        await digest_command(update, context)
+
+async def weekly_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /weekly, /week - Generates and dispatches the comprehensive institutional weekly intelligence PDF report."""
+    user = update.effective_user
+    if not is_user_allowed(user.id):
+        await unauthorized_reply(update)
+        return
+
+    await forex_pdf_command(update, context)
 
 async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /ta or /signal - Generates real-time candlestick dissection & high-conviction trading setup."""
@@ -1483,6 +1510,11 @@ def main():
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("forecast", digest_command))
     app.add_handler(CommandHandler("prediction", digest_command))
+    app.add_handler(CommandHandler("nextday", digest_command))
+    app.add_handler(CommandHandler("gravity", gravity_command))
+    app.add_handler(CommandHandler("predict", gravity_command))
+    app.add_handler(CommandHandler("weekly", weekly_command))
+    app.add_handler(CommandHandler("week", weekly_command))
     app.add_handler(CommandHandler("forecast_pdf", forecast_pdf_command))
     app.add_handler(CommandHandler("forex_pdf", forex_pdf_command))
     app.add_handler(CommandHandler("ta", ta_command))

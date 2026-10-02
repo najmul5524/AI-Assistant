@@ -154,6 +154,16 @@ CRITICAL INSTITUTIONAL PREDICTION MANDATE:
    - Retain all technical indicators, financial metrics, chart patterns, asset terminology, trading jargon, and key concepts in standard English alongside Bengali (e.g. 'ম্যাক্রো চালচিত্র (Macro Drivers)', 'বুলিশ/বিয়ারিশ বায়াস (Bullish/Bearish Bias)', 'কী সাপোর্ট ও রেজিস্ট্যান্স (Key Support & Resistance Levels)', 'ফেডের হকিশ অবস্থান (Fed\'s Hawkish Stance)', 'রেট কাট প্রত্যাশা (Rate Cut Expectations)', 'সেফ-হেভেন ফ্লো (Safe-Haven Flows)', 'লিকুইডিটি ও ক্যাপিটাল প্রিজার্ভেশন (Liquidity & Capital Preservation)', 'স্টপ-লস ও টেক-প্রফিট (Stop-Loss & Take-Profit)' ইত্যাদি). This makes the intelligence immediately readable, highly practical, and understandable for financial market participants.
    - কোনো শব্দ বা প্রত্যয়ের মাঝে অপ্রয়োজনীয় হাইফেন ব্যবহার করবেন না।
 4. Do not use raw emojis in headers.
+5. MANDATORY NEWS GRAVITY SCORING (১–১০ স্কেল) & MOVEMENT PREDICTION:
+   For every asset, analyze all related breaking and economic calendar news using an explicit Gravity Score (১–১০ স্কেল):
+   - 🔟/10: Historic systemic shocks (Emergency rate cuts/hikes, war breakout, major strait blockade).
+   - 8–9/10: Major Tier-1 macro drivers (FOMC/Fed Rate Decision, US CPI, Non-Farm Payrolls NFP, OPEC quota shock).
+   - 6–7/10: Tier-2 macro catalysts (GDP, Core PCE, Retail Sales, PPI, Initial Jobless Claims, Flash PMI).
+   - 4–5/10: Central bank speeches, consumer sentiment, housing data.
+   - 1–3/10: Minor routine economic data or standard commentary.
+   Every asset section MUST explicitly state:
+   - ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity Score - ১–১০):** প্রতিটি রিলেটেড খবরের শিরোনাম, উৎস, ১-১০ স্কেলে গ্র্যাভিটি স্কোর এবং সেটি মার্কেটে 📈 উপরে তুলবে নাকি 📉 নিচে নামাবে তার সুনির্দিষ্ট কারণ।
+   - 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** অথবা 🔴 **নিচে নামবে (BEARISH 📉)** (নিট গ্র্যাভিটি স্কোর সহ, যেমন: নিট গ্র্যাভিটি +৮.২/১০ — তীব্র ঊর্ধ্বমুখী চাপ)।
 
 Strictly structure the report with the following markdown layout:
 
@@ -171,13 +181,17 @@ Strictly structure the report with the following markdown layout:
 ## ২. মেটালস পূর্বাভাস ও প্রাইস রেঞ্জ (Metals Outlook: Gold & Silver)
 
 ### Gold (XAU/USD)
-- **সম্ভাব্য গতিপথ ও বায়াস (Directional Bias):** বুলিশ (Bullish) / বেয়ারিশ (Bearish) / কনসোলিডেশন (Range-bound)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে (Bullish) / 📉 নিচে নামবে (Bearish)] — কারণ
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)** [নিট গ্র্যাভিটি স্কোর সহ]
 - **প্রত্যাশিত রেঞ্জ ও কী লেভেল (Expected Range & Key Levels):** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
 - **মূল অনুঘটক ও ক্যাটালিস্ট (Underlying Catalysts):** কেন এই মুভমেন্ট প্রত্যাশিত (ট্রেজারি ইল্ড, ডলার ইনডেক্স, নিরাপদ বিনিয়োগ চাহিদা ও ভূ-রাজনীতি নিয়ে বিস্তারিত আলোচনা)
 - **ট্রেডিং অ্যাকশন প্ল্যান (Trading Action Plan):** কোন লেভেল টেস্টে প্রাতিষ্ঠানিক এন্ট্রি ও পুলব্যাক কৌশল
 
 ### Silver (XAG/USD)
-- **সম্ভাব্য গতিপথ ও বায়াস (Directional Bias):** বুলিশ (Bullish) / বেয়ারিশ (Bearish) / রেঞ্জ (Range)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **প্রত্যাশিত রেঞ্জ ও কী লেভেল (Expected Range & Key Levels):** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
 - **মূল অনুঘটক ও ট্রেডিং রোডম্যাপ (Catalysts & Trading Roadmap):** ইন্ডাস্ট্রিয়াল চাহিদা, গোল্ড/সিলভার রেশিও এবং ট্রেডিং কৌশল
 
@@ -186,16 +200,24 @@ Strictly structure the report with the following markdown layout:
 ## ৩. ফিউচার্স ও স্টক ইনডেক্স পূর্বাভাস (Equities & Commodities: Nasdaq 100, S&P 500 & Crude Oil)
 
 ### Nasdaq 100 (NAS100 / US100)
-- **সম্ভাব্য গতিপথ ও বায়াস (Directional Bias):** বুলিশ (Bullish) / বেয়ারিশ (Bearish) / কনসোলিডেশন (Consolidation)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **কী পিভট ও টেকনিক্যাল লেভেল (Key Pivot & Technical Levels):** সাপোর্ট (... - ...) ও রেজিস্ট্যান্স (... - ...)
 - **মেগা-ক্যাপ ও এআই ড্রাইভার্স (Mega-Cap & AI Drivers):** Apple, Nvidia, Microsoft ও এআই সেক্টর সেন্টিমেন্ট এবং বন্ড ইল্ড প্রভাব
 - **ট্রেডিং দৃষ্টিভঙ্গি (Trading Outlook):** প্রাতিষ্ঠানিক রোডম্যাপ ও আগামীকালের কি-লেভেল প্ল্যান
 
 ### S&P 500 Futures (US500)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **সম্ভাব্য গতিপথ ও টেকনিক্যাল রেঞ্জ (Expected Path & Technical Range):** সাপোর্ট (... - ...) ও রেজিস্ট্যান্স (... - ...)
 - **ইকুইটি সেন্টিমেন্ট ও ক্যাটালাইস্ট (Equity Sentiment & Catalysts):** আর্নিংস ও রিস্ক সেন্টিমেন্ট প্রবাহ
 
 ### US Crude Oil Futures (WTI / Brent)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী তেলের মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **সম্ভাব্য গতিপথ ও টেকনিক্যাল রেঞ্জ (Expected Path & Technical Range):** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
 - **তেলের ম্যাক্রো অনুঘটক (Oil Macro Drivers):** ওপেক প্লাস ও ভূ-রাজনৈতিক ঝুঁকির বিশ্লেষণ
 
@@ -207,13 +229,17 @@ Strictly structure the report with the following markdown layout:
 ## ৪. ক্রিপ্টোকারেন্সি পূর্বাভাস ও কী লেভেলস (Crypto Outlook: Bitcoin & Ethereum)
 
 ### Bitcoin (BTC/USD)
-- **সম্ভাব্য গতিপথ ও বায়াস (Directional Bias):** বুলিশ (Bullish) / বেয়ারিশ (Bearish) / কনসোলিডেশন (Range-bound)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **প্রত্যাশিত রেঞ্জ ও কী লেভেল (Expected Range & Key Levels):** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
 - **ম্যাক্রো অনুঘটক ও ইটিএফ প্রবাহ (Macro Catalysts & Institutional ETF Flows):** স্পট বিটকয়েন ইটিএফ ক্যাপিটাল ফ্লো, মার্কিন ডলার/লিকুইডিটি ও ফেড রেট কাট প্রত্যাশার প্রভাব
 - **ট্রেডিং অ্যাকশন প্ল্যান (Trading Action Plan):** ব্রেকআউট ও প্রাতিষ্ঠানিক সাপোর্ট জোনে পুলব্যাক এন্ট্রি কৌশল
 
 ### Ethereum (ETH/USD)
-- **সম্ভাব্য গতিপথ ও বায়াস (Directional Bias):** বুলিশ (Bullish) / বেয়ারিশ (Bearish) / রেঞ্জ (Range)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **প্রত্যাশিত রেঞ্জ ও কী লেভেল (Expected Range & Key Levels):** সাপোর্ট ($... - $...) ও রেজিস্ট্যান্স ($... - $...)
 - **নেটওয়ার্ক অ্যাক্টিভিটি ও ইটিএফ প্রভাব (Network Activity & Institutional Flows):** ইথার স্পট ইটিএফ, ডিফাই লিকুইডিটি এবং ইটিএইচ/বিটিসি রেশিও বিশ্লেষণ
 
@@ -222,18 +248,30 @@ Strictly structure the report with the following markdown layout:
 ## ৫. প্রধান ফরেক্স পেয়ার পূর্বাভাস (Forex Majors Roadmaps)
 
 ### Euro (EUR/USD)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **আগামীকালের রোডম্যাপ ও টেকনিক্যাল রেঞ্জ (Roadmap & Technical Range):** সাপোর্ট (... - ...) ও রেজিস্ট্যান্স (... - ...)
 - **ম্যাক্রো চালচিত্র ও সেশন স্ট্র্যাটেজি (Macro Drivers & Session Strategy):** লন্ডন ও নিউইয়র্ক সেশনের আউটলুক ও ট্রেডিং রোডম্যাপ
 
 ### British Pound (GBP/USD)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **আগামীকালের রোডম্যাপ ও টেকনিক্যাল রেঞ্জ (Roadmap & Technical Range):** সাপোর্ট (... - ...) ও রেজিস্ট্যান্স (... - ...)
 - **ম্যাক্রো চালচিত্র ও ট্রেডিং রোডম্যাপ (Macro Drivers & Trading Roadmap):** ব্যাংক অব ইংল্যান্ড ও যুক্তরাজ্যের ডাটা প্রভাব
 
 ### Japanese Yen (USD/JPY)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **আগামীকালের রোডম্যাপ ও টেকনিক্যাল রেঞ্জ (Roadmap & Technical Range):** সাপোর্ট (... - ...) ও রেজিস্ট্যান্স (... - ...)
 - **ম্যাক্রো চালচিত্র ও ইন্টারভেনশন ঝুঁকি (Macro Drivers & Intervention Risk):** ক্যারি ট্রেড ও বিওজে ফ্যাক্টর
 
 ### Commodity Currencies (USD/CAD & AUD/USD)
+- ⚖️ **সম্পর্কিত খবরের গ্র্যাভিটি মার্কিং (News Gravity: ১–১০ স্কেল):**
+  * [খবরের শিরোনাম ও উৎস] — গ্র্যাভিটি: [X.X/১০] — মুভমেন্ট প্রভাব: [📈 উপরে যাবে / 📉 নিচে নামবে]
+- 🔮 **পরবর্তী মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** / 🔴 **নিচে নামবে (BEARISH 📉)**
 - **আগামীকালের রোডম্যাপ ও দিকনির্দেশনা (Roadmap & Policy Direction):** কমোডিটি ও সেন্ট্রাল ব্যাংক পলিসি বিশ্লেষণ
 
 ---
@@ -321,6 +359,12 @@ CRITICAL INSTITUTIONAL REPORT MANDATE:
    - Retain and highlight all financial metrics, economic indicators, chart patterns, asset terminology, central bank policy jargon, and trading terms in English alongside Bengali (e.g. 'ম্যাক্রো চালচিত্র (Macro Drivers)', 'প্রযুক্তিগত দৃষ্টিভঙ্গি (Technical Outlook)', 'বুলিশ/বিয়ারিশ বায়াস (Bullish/Bearish Bias)', 'কী সাপোর্ট ও রেজিস্ট্যান্স (Key Support & Resistance Levels)', 'ফেডের হকিশ পলিসি (Fed\'s Hawkish Policy)', 'ডট প্লট প্রজেকশন (Dot Plot Projections)', 'রেট কাট প্রত্যাশা (Rate Cut Expectations)', 'সেফ-হেভেন ডিমান্ড (Safe-Haven Demand)', 'বন্ড ইল্ড ও লিকুইডিটি (Bond Yield & Liquidity)', 'ক্যাপিটাল প্রিজার্ভেশন (Capital Preservation)', 'স্টপ-লস ও টেক-প্রফিট (Stop-Loss & Take-Profit)', 'আর্নিংস ও রিস্ক সেন্টিমেন্ট (Earnings & Risk Sentiment)' ইত্যাদি). This allows traders to immediately grasp professional market terminology without confusion.
    - কোনো শব্দ বা প্রত্যয়ের মাঝে অপ্রয়োজনীয় হাইফেন ব্যবহার করবেন না (যেমন: 'প্রজেকশনে', 'মুদ্রাস্ফীতি লক্ষ্যমাত্রায়', 'ফেডের' ইত্যাদি স্বাভাবিকভাবে লিখবেন)।
 4. Do not use raw emojis in headers.
+5. MANDATORY WEEKLY NEWS GRAVITY SCORING (১–১০ স্কেল) & DIRECTIONAL PREDICTION:
+   For every major asset (DXY, EUR/USD, GBP/USD, USD/JPY, Gold, Silver, Crude Oil, Nasdaq 100, S&P 500, Bitcoin):
+   Evaluate all related weekly catalysts and upcoming news with an explicit Gravity Score (১–১০ স্কেল):
+   - ⚖️ **সাপ্তাহিক খবরের গ্র্যাভিটি মার্কিং (Weekly News Gravity: ১–১০ স্কেল):**
+     * [খবর/ইভেন্ট ও উৎস] — গ্র্যাভিটি: [X.X/১০] — প্রভাব: [📈 উপরে যাবে (Bullish) / 📉 নিচে নামবে (Bearish)]
+   - 🔮 **সাপ্তাহিক মার্কেট মুভমেন্ট প্রেডিকশন:** 🟢 **উপরে যাবে (BULLISH 📈)** অথবা 🔴 **নিচে নামবে (BEARISH 📉)** (নিট গ্র্যাভিটি স্কোর ও এক্সপেক্টেড রেঞ্জ সহ)।
 
 Strictly structure the report with the following markdown layout and headings:
 

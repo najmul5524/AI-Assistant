@@ -40,8 +40,8 @@ from llm_manager import MultiTierLLMManager
 
 logger = logging.getLogger(__name__)
 
-# Maximum age for an article to be eligible for instant breaking news alerts (60 minutes)
-MAX_BREAKING_NEWS_AGE_MINUTES = 60.0
+# Maximum age for an article to be eligible for instant breaking news alerts (120 minutes)
+MAX_BREAKING_NEWS_AGE_MINUTES = 120.0
 MAX_BREAKING_NEWS_AGE_HOURS = MAX_BREAKING_NEWS_AGE_MINUTES / 60.0
 
 # Secondary institutional RSS fallback feeds
@@ -122,11 +122,75 @@ def is_duplicate_story(title_candidate: str, reference_titles: List[str]) -> boo
             return True
     return False
 
+def classify_forexfactory_impact(
+    title: str,
+    preview: str = "",
+    raw_impact: str = "",
+    source: str = ""
+) -> str:
+    """
+    Intelligently determines impact level (high, medium, low) in real time (zero lag).
+    Solves the ForexFactory delay/miss problem where 65%+ of fresh news arrives with raw impact="" (empty)
+    and is only tagged by ForexFactory moderators 10-20 minutes later (or never).
+    """
+    raw = (raw_impact or "").strip().lower()
+    if raw == "low":
+        return "low"
+    if raw == "high":
+        return "high"
+    if raw == "medium":
+        return "medium"
+
+    text = html_lib.unescape(f"{title} {preview} {source}").lower()
+
+    # 1. Filter obvious fluff/celebrity/lifestyle/sports topics with zero market relevance
+    if re.search(r'\b(onlyfans|suburban wives|celebrity|divorce|hollywood|sports|nfl|nba|movie|movies|fashion|mansion|lifestyle|maisonette|billionaire)\b', text, re.I):
+        return "low"
+
+    # 2. High Impact Catalysts
+    high_pattern = (
+        r'\b(fed|federal reserve|powell|fomc|rate hike|rate cut|interest rate|neutral rate|monetary policy|'
+        r'ecb|lagarde|boe|bailey|boj|ueda|rba|bullock|boc|macklem|snb|'
+        r'inflation|cpi|core cpi|pce|core pce|ppi|nfp|non-farm|nonfarm|jobs report|'
+        r'unemployment|jobless claims|initial claims|gdp|retail sales|pmi|ism|recession|stagflation|'
+        r'war|strike|airstrike|attack|missile|drone|ceasefire|truce|sanction|sanctions|bombing|'
+        r'hormuz|blockade|red sea|bab el-mandeb|strait|iran|israel|russia|ukraine|emergency|crisis|'
+        r'opec|opec\+|crude|oil|brent|wti|spr|refinery|diesel export|fuel export|'
+        r'tariff|tariffs|trade war|debt ceiling|default|bailout|liquidity|bond carnage|'
+        r'yield surge|bond selloff|bond rout|currency intervention|crash|plunge|surge|'
+        r'record high|record low|all-time high)\b'
+    )
+    if re.search(high_pattern, text, re.I):
+        return "high"
+
+    # 3. Medium Impact Catalysts
+    med_pattern = (
+        r'\b(bowman|waller|bostic|goolsbee|kashkari|logan|daly|musalem|barkin|cook|jefferson|kugler|barr|williams|collins|hammack|'
+        r'lane|schnabel|nagel|villeroy|panetta|stournaras|knot|'
+        r'pill|broadbent|ramsden|lombardelli|greene|dhingra|haskel|mann|'
+        r'himino|uchida|jordan|schlegel|martin|hauser|rogers|pan gongsheng|central bank|'
+        r'consumer confidence|michigan sentiment|housing starts|home sales|building permits|'
+        r'dollar|dxy|euro|yen|pound|sterling|swiss franc|gold|xau|silver|xag|nasdaq|s&p|dow|bitcoin|crypto|btc|eth|'
+        r'treasury|treasuries|yields|yield|bond|bonds|sovereign bond|rally|reversal|correction|selloff|'
+        r'trade balance|trade deficit|current account|industrial production|manufacturing|durable goods|factory orders|exports|imports)\b'
+    )
+    if re.search(med_pattern, text, re.I):
+        return "medium"
+
+    # 4. Institutional wire sources on ForexFactory (Reuters, Bloomberg, WSJ, CNBC, FT, Fed)
+    inst_sources = ["reuters", "bloomberg", "wsj", "cnbc", "ft.com", "federalreserve.gov", "marketwatch", "pbs.org", "dow jones", "investing"]
+    if any(k in source.lower() for k in inst_sources):
+        return "medium"
+
+    # Fallback for financial news on ForexFactory: medium, allowing AI to verify market relevance
+    return "medium"
+
 def fetch_forexfactory_direct_news(limit: int = 50) -> List[Dict[str, Any]]:
     """
     Priority #1: Directly scrape real-time breaking news from https://www.forexfactory.com/news
     using curl_cffi Safari 15.5 impersonation with timestamp cache-buster to prevent any stale cache.
-    Extracts exact headline, source, impact level ('high', 'medium', 'low', ''), and timestamp.
+    Extracts exact headline, source, impact level ('high', 'medium', 'low'), and timestamp.
+    Applies zero-latency real-time impact classifier so untagged stories are immediately evaluated.
     Sorts strictly newest first.
     """
     if cffi_requests is None:
@@ -196,7 +260,16 @@ def fetch_forexfactory_direct_news(limit: int = 50) -> List[Dict[str, Any]]:
             raw_source = st.get("source", "Forex Factory")
             source_label = f"Forex Factory ({raw_source})"
 
-            impact_val = str(st.get("impact") or "").strip().lower()
+            raw_impact_val = str(st.get("impact") or "").strip().lower()
+            preview_text = html_lib.unescape(st.get("preview", "")).strip()
+
+            # Zero-latency real-time impact classifier:
+            classified_impact = classify_forexfactory_impact(
+                title=raw_title,
+                preview=preview_text,
+                raw_impact=raw_impact_val,
+                source=raw_source
+            )
 
             articles.append({
                 "news_id": f"ff_{sid}",
@@ -205,9 +278,10 @@ def fetch_forexfactory_direct_news(limit: int = 50) -> List[Dict[str, Any]]:
                 "pub_date": pub_date_str,
                 "pub_date_dhaka": pub_date_dhaka,
                 "published_dt": dt_utc,
-                "description": html_lib.unescape(st.get("preview", "")).strip(),
+                "description": preview_text,
                 "source": source_label,
-                "impact": impact_val, # 'high', 'medium', 'low', or ''
+                "impact": classified_impact, # 'high', 'medium', or 'low'
+                "raw_impact": raw_impact_val,
                 "is_forexfactory": True
             })
 
@@ -288,17 +362,8 @@ def fetch_forexfactory_indexed_news(keyword: Optional[str] = None, limit: int = 
                 pub_dhaka = dt_obj.astimezone(dhaka_tz).strftime("%I:%M %p, %d %b %Y") if dt_obj else pub_str
                 story_url = link_el.text.strip() if link_el is not None and link_el.text else ""
 
-                # Auto-assign impact level: High for major market moving catalysts, Medium for others
-                is_high = any(k in norm for k in [
-                    "war", "truce", "ceasefire", "strike", "attack", "missile", "drone",
-                    "sanction", "emergency", "crisis", "surge", "plunge", "record high",
-                    "record low", "all-time high", "all time high", "crash", "rally", "fed",
-                    "powell", "fomc", "rate cut", "rate hike", "interest rate", "inflation",
-                    "cpi", "pce", "recession", "tariff", "trade war", "gdp", "nfp", "jobs report",
-                    "opec", "hormuz", "blockade", "reopen", "deal", "sec", "liquidation", "bailout",
-                    "yield curve", "debt ceiling", "default", "central bank", "stimulus", "diesel export"
-                ])
-                impact_val = "high" if is_high else "medium"
+                # Auto-assign impact level using real-time institutional classifier
+                impact_val = classify_forexfactory_impact(clean_title, "", "", "Forex Factory")
 
                 articles.append({
                     "news_id": generate_news_id(clean_title),

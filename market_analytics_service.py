@@ -260,11 +260,12 @@ def fetch_asset_forexfactory_news(category: str, currency: str = "USD", limit: i
                 # Must be High or Medium, OR critical macro/market catalyst
                 is_explicit_high_med = impact in ["high", "medium"]
                 is_critical_catalyst = any(k in t_lower for k in [
-                    "fed", "powell", "fomc", "rate hike", "rate cut", "cpi", "inflation",
+                    "fed", "powell", "fomc", "rate hike", "rate cut", "interest rate", "cpi", "inflation",
+                    "pce", "ppi", "nfp", "jobs report", "unemployment", "jobless claims", "payroll",
                     "war", "truce", "sanction", "crisis", "surge", "plunge", "record high",
-                    "all-time high", "all time high", "tariff", "recession", "gdp", "nfp",
+                    "all-time high", "all time high", "tariff", "recession", "gdp", "retail sales", "pmi",
                     "etf", "sec", "opec", "hormuz", "ecb", "lagarde", "boe", "bailey", "boj", "ueda",
-                    "stimulus", "liquidity", "debt ceiling", "default"
+                    "stimulus", "liquidity", "debt ceiling", "default", "bond selloff", "bond rout", "yields", "dollar"
                 ])
 
                 if not (is_explicit_high_med or is_critical_catalyst):

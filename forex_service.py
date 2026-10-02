@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 FF_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 CACHE_FILE = BASE_DIR / "ff_calendar_cache.json"
-CACHE_TTL_SECONDS = 900  # 15 minutes
+CACHE_TTL_SECONDS = 60  # 1 minute for near-real-time calendar updates
 
 _MEMORY_CACHE = {
     "data": [],

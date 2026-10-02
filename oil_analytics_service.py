@@ -206,7 +206,9 @@ def fetch_forexfactory_oil_stories(limit: int = 35) -> List[Dict[str, Any]]:
                 is_explicit_high_med = impact in ["high", "medium"]
                 is_critical_energy_catalyst = any(k in t_lower for k in [
                     "hormuz", "blockade", "opec", "iran war", "sanction", "emergency",
-                    "truce", "missile", "drone", "refiner", "diesel export", "crude oil export losses"
+                    "truce", "missile", "drone", "refiner", "diesel export", "crude oil export losses",
+                    "inventory", "inventories", "crude", "oil", "brent", "wti", "eia", "api", "spr",
+                    "middle east", "geopolitical", "red sea", "pipeline"
                 ])
 
                 if not (is_explicit_high_med or is_critical_energy_catalyst):

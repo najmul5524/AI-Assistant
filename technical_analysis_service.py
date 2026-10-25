@@ -10,10 +10,21 @@ import datetime
 import logging
 import math
 from typing import Dict, Any, List, Optional, Tuple
+from pathlib import Path
+import zoneinfo
 import requests
 
-from config import DEFAULT_TIMEZONE
+from config import DEFAULT_TIMEZONE, REPORTS_DIR
 from llm_manager import MultiTierLLMManager
+
+# Ensure headless Agg backend for matplotlib
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except Exception as _mpl_err:
+    HAS_MATPLOTLIB = False
 
 logger = logging.getLogger(__name__)
 
@@ -399,6 +410,214 @@ def calculate_atr(candles: List[Dict[str, Any]], period: int = 14) -> float:
         atr = (atr * (period - 1) + tr) / period
     return round(atr, 4)
 
+def calculate_micro_indicators(candles: List[Dict[str, Any]]) -> Dict[str, float]:
+    """Calculates key micro indicators across candles for dynamic ATR buffers and trend."""
+    if not candles:
+        return {"rsi_14": 50.0, "ema_9": 0.0, "ema_21": 0.0, "ema_50": 0.0, "atr_14": 1.0}
+    closes = [c["close"] for c in candles]
+    return {
+        "rsi_14": calculate_rsi(closes, period=14),
+        "ema_9": calculate_ema(closes, period=9),
+        "ema_21": calculate_ema(closes, period=21),
+        "ema_50": calculate_ema(closes, period=50),
+        "atr_14": calculate_atr(candles, period=14)
+    }
+
+def generate_candlestick_chart(
+    candles: List[Dict[str, Any]],
+    ticker: str,
+    display_name: str,
+    timeframe: str,
+    trade_params: Optional[Dict[str, Any]] = None,
+    output_path: Optional[Path] = None
+) -> Optional[Path]:
+    """
+    Renders an institutional dark-mode Candlestick Chart (PNG) with:
+    - Multi-period moving averages (EMA 9, 21, 50)
+    - Support and Resistance levels
+    - Actionable trade parameter overlays (Entry, Stop Loss, Take Profit 1 & 2)
+    - RSI (14) momentum oscillator subplot with overbought/oversold bands
+    - Local Bangladesh Time (BST) timestamps
+    """
+    if not HAS_MATPLOTLIB or not candles or len(candles) < 5:
+        return None
+
+    try:
+        try:
+            local_tz = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+        except Exception:
+            local_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
+
+        charts_dir = REPORTS_DIR / "charts"
+        charts_dir.mkdir(parents=True, exist_ok=True)
+
+        # Cleanup old charts older than 24h
+        now_ts = datetime.datetime.now().timestamp()
+        for old_f in charts_dir.glob("*.png"):
+            try:
+                if now_ts - old_f.stat().st_mtime > 86400:
+                    old_f.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        if output_path is None:
+            clean_ticker = ticker.replace("=", "_").replace("^", "_").replace("-", "_").replace(".", "_")
+            ts_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = charts_dir / f"chart_{clean_ticker}_{timeframe}_{ts_str}.png"
+
+        # Number of candles to plot (keep around 40-52 candles for high clarity)
+        N = min(len(candles), 48)
+        plot_candles = candles[-N:]
+
+        # Calculate indicators across the full history for stability
+        closes_full = [c["close"] for c in candles]
+        ema9_full = [calculate_ema(closes_full[:i], 9) for i in range(1, len(candles) + 1)]
+        ema21_full = [calculate_ema(closes_full[:i], 21) for i in range(1, len(candles) + 1)]
+        ema50_full = [calculate_ema(closes_full[:i], 50) for i in range(1, len(candles) + 1)]
+        rsi_full = [calculate_rsi(closes_full[:i], 14) for i in range(1, len(candles) + 1)]
+
+        ema9 = ema9_full[-N:]
+        ema21 = ema21_full[-N:]
+        ema50 = ema50_full[-N:]
+        rsi = rsi_full[-N:]
+
+        # Create Figure & Subplots (Main Price Chart + RSI Subplot)
+        fig, (ax_main, ax_rsi) = plt.subplots(
+            2, 1, figsize=(13.5, 8.5),
+            gridspec_kw={"height_ratios": [3.6, 1.0], "hspace": 0.12},
+            facecolor="#0b0f19"
+        )
+        ax_main.set_facecolor("#111827")
+        ax_rsi.set_facecolor("#111827")
+
+        # Plot Candlesticks
+        for i, c in enumerate(plot_candles):
+            is_bull = c["close"] >= c["open"]
+            col = "#10b981" if is_bull else "#ef4444"
+            body_bot = min(c["open"], c["close"])
+            body_h = max(abs(c["close"] - c["open"]), 0.0001)
+
+            # High-Low Wick
+            ax_main.vlines(i, c["low"], c["high"], color=col, linewidth=1.2, alpha=0.9)
+            # Candle Real Body
+            ax_main.bar(i, body_h, bottom=body_bot, width=0.68, color=col, edgecolor=col, alpha=0.95)
+
+        # Plot Moving Averages
+        ax_main.plot(range(N), ema9, color="#38bdf8", linewidth=1.5, label="EMA 9 (Fast)")
+        ax_main.plot(range(N), ema21, color="#fbbf24", linewidth=1.5, label="EMA 21 (Pullback)")
+        ax_main.plot(range(N), ema50, color="#c084fc", linewidth=1.5, label="EMA 50 (Trend)")
+
+        # Support & Resistance Levels
+        highs = [c["high"] for c in plot_candles]
+        lows = [c["low"] for c in plot_candles]
+        res_level = max(highs)
+        sup_level = min(lows)
+        ax_main.axhline(res_level, color="#f87171", linestyle="--", linewidth=1.0, alpha=0.4, label=f"Resistance: {res_level}")
+        ax_main.axhline(sup_level, color="#34d399", linestyle="--", linewidth=1.0, alpha=0.4, label=f"Support: {sup_level}")
+
+        # Trade Parameters Overlay (Entry, SL, TP1, TP2)
+        if trade_params and trade_params.get("entry"):
+            entry = trade_params["entry"]
+            sl = trade_params.get("sl")
+            tp1 = trade_params.get("tp1")
+            tp2 = trade_params.get("tp2")
+
+            # Entry Line
+            ax_main.axhline(entry, color="#3b82f6", linestyle="-", linewidth=2.0, alpha=0.9)
+            ax_main.text(
+                N - 0.5, entry, f"  ENTRY: {entry}",
+                color="#ffffff", va="center", ha="left", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="#1e3a8a", edgecolor="#3b82f6", alpha=0.95)
+            )
+
+            # Stop Loss Line
+            if sl:
+                ax_main.axhline(sl, color="#f43f5e", linestyle="--", linewidth=2.0, alpha=0.9)
+                ax_main.text(
+                    N - 0.5, sl, f"  SL: {sl}",
+                    color="#ffffff", va="center", ha="left", fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.25", facecolor="#881337", edgecolor="#f43f5e", alpha=0.95)
+                )
+                ax_main.axhspan(min(entry, sl), max(entry, sl), color="#ef4444", alpha=0.10)
+
+            # Take Profit 1 Line
+            if tp1:
+                ax_main.axhline(tp1, color="#10b981", linestyle="--", linewidth=2.0, alpha=0.9)
+                ax_main.text(
+                    N - 0.5, tp1, f"  TP1: {tp1}",
+                    color="#ffffff", va="center", ha="left", fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.25", facecolor="#064e3b", edgecolor="#10b981", alpha=0.95)
+                )
+                ax_main.axhspan(min(entry, tp1), max(entry, tp1), color="#10b981", alpha=0.10)
+
+            # Take Profit 2 Line
+            if tp2:
+                ax_main.axhline(tp2, color="#059669", linestyle=":", linewidth=2.0, alpha=0.9)
+                ax_main.text(
+                    N - 0.5, tp2, f"  TP2: {tp2}",
+                    color="#ffffff", va="center", ha="left", fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.25", facecolor="#064e3b", edgecolor="#059669", alpha=0.95)
+                )
+
+        # Main Plot Formatting
+        curr_price = plot_candles[-1]["close"]
+        first_open = plot_candles[0]["open"]
+        price_diff = curr_price - first_open
+        pct_diff = (price_diff / first_open) * 100 if first_open else 0.0
+        change_sign = "+" if price_diff >= 0 else ""
+
+        now_local = datetime.datetime.now(local_tz).strftime("%d %b %Y, %I:%M %p BST")
+        ax_main.set_title(
+            f"{display_name}  •  {timeframe}  |  Price: {curr_price} ({change_sign}{pct_diff:.2f}%)  •  {now_local}",
+            color="#f3f4f6", fontsize=13, fontweight="bold", pad=12, loc="left"
+        )
+
+        ax_main.grid(True, color="#1f2937", linestyle="--", alpha=0.7)
+        ax_main.tick_params(axis="y", colors="#9ca3af", labelsize=9)
+        ax_main.tick_params(axis="x", labelbottom=False, bottom=False)
+        ax_main.set_xlim(-0.8, N + 5)
+        ax_main.legend(loc="upper left", facecolor="#1f2937", edgecolor="#374151", labelcolor="#e5e7eb", fontsize=8.5)
+
+        # RSI Subplot
+        ax_rsi.plot(range(N), rsi, color="#818cf8", linewidth=1.7, label=f"RSI (14): {rsi[-1]:.1f}")
+        ax_rsi.axhline(70, color="#ef4444", linestyle="--", linewidth=0.9, alpha=0.7)
+        ax_rsi.axhline(50, color="#64748b", linestyle=":", linewidth=0.8, alpha=0.5)
+        ax_rsi.axhline(30, color="#10b981", linestyle="--", linewidth=0.9, alpha=0.7)
+        ax_rsi.fill_between(range(N), 30, 70, color="#1e293b", alpha=0.35)
+        ax_rsi.set_ylim(10, 90)
+        ax_rsi.grid(True, color="#1f2937", linestyle="--", alpha=0.7)
+        ax_rsi.tick_params(axis="y", colors="#9ca3af", labelsize=8)
+        ax_rsi.set_yticks([30, 50, 70])
+        ax_rsi.legend(loc="upper left", facecolor="#1f2937", edgecolor="#374151", labelcolor="#e5e7eb", fontsize=8)
+
+        # X-Axis Timestamps (Format in Bangladesh Time)
+        step = max(1, N // 7)
+        tick_indices = list(range(0, N, step))
+        if (N - 1) not in tick_indices:
+            tick_indices.append(N - 1)
+
+        tick_labels = []
+        for idx in tick_indices:
+            c_time = plot_candles[idx]["time"]
+            if hasattr(c_time, "astimezone"):
+                c_local = c_time.astimezone(local_tz)
+            else:
+                c_local = c_time
+            tick_labels.append(c_local.strftime("%H:%M\n%d %b"))
+
+        ax_rsi.set_xlim(-0.8, N + 5)
+        ax_rsi.set_xticks(tick_indices)
+        ax_rsi.set_xticklabels(tick_labels, color="#9ca3af", fontsize=8.5)
+
+        # Save and close
+        plt.savefig(output_path, dpi=130, bbox_inches="tight", facecolor=fig.get_facecolor(), edgecolor="none")
+        plt.close(fig)
+        return output_path
+    except Exception as e:
+        logger.error(f"Error generating candlestick chart: {e}")
+        return None
+
+
 # ----------------- Candlestick Microstructure Dissection ----------------- #
 
 def dissect_candle(candle: Dict[str, Any]) -> Dict[str, Any]:
@@ -564,11 +783,12 @@ def analyze_candle_sequence(candles: List[Dict[str, Any]], sub_candles_5m: Optio
 
 # ----------------- LLM Forensic Synthesis & Signal Generation ----------------- #
 
-def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m", is_default_tf: bool = False) -> str:
+def generate_candle_dissection_report_with_chart(symbol_query: str, timeframe: str = "15m", is_default_tf: bool = False) -> Tuple[str, Optional[Path]]:
     """
     Main entry point: fetches live OHLCV, calculates microscopic candle anatomy,
-    reconstructs temporal formation, detects liquidity traps, and generates an institutional
-    forensic dissection and high-probability trading signal in bilingual Bengali-English.
+    reconstructs temporal formation, detects liquidity traps, generates an institutional-grade
+    candlestick chart image, and provides high-probability trading signals in bilingual Bengali-English.
+    Returns: (report_text, chart_path)
     """
     timeframe = normalize_timeframe(timeframe)
     ticker, display_name = resolve_symbol(symbol_query)
@@ -589,7 +809,10 @@ def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m",
         candles = fetch_candles(ticker, interval=timeframe, range_str=fallback_range)
 
     if not candles or len(candles) < 5:
-        return f"❌ দুঃখিত, *{display_name}* ({ticker})-এর লাইভ ক্যান্ডেল ডেটা এই মুহূর্তে পাওয়া যাচ্ছে না। অনুগ্রহ করে একটু পর আবার চেষ্টা করুন বা অন্য সিম্বল দিন।"
+        return (
+            f"❌ দুঃখিত, *{display_name}* ({ticker})-এর লাইভ ক্যান্ডেল ডেটা এই মুহূর্তে পাওয়া যাচ্ছে না। অনুগ্রহ করে একটু পর আবার চেষ্টা করুন বা অন্য সিম্বল দিন।",
+            None
+        )
 
     # 2. Fetch sub-candles for intra-candle reconstruction
     sub_candles = None
@@ -603,7 +826,7 @@ def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m",
     # 3. Microstructure analysis
     analysis = analyze_candle_sequence(candles, sub_candles_5m=sub_candles)
     if not analysis:
-        return f"❌ *{display_name}* এর ক্যান্ডেল ব্যবচ্ছেদ গণনায় ত্রুটি ঘটেছে।"
+        return (f"❌ *{display_name}* এর ক্যান্ডেল ব্যবচ্ছেদ গণনায় ত্রুটি ঘটেছে।", None)
 
     curr = analysis["current"]
     prev = analysis["previous"]
@@ -611,7 +834,57 @@ def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m",
     phases = analysis["intra_phases"]
     inds = analysis["indicators"]
 
-    # Format factual context for Gemini
+    # 4. Calculate Precision Quantitative Trade Parameters (Entry, SL, TP1, TP2)
+    entry_val = curr["close"]
+    atr_val = inds.get("atr_14", 1.0)
+    if atr_val == 0:
+        atr_val = max(abs(curr["high"] - curr["low"]), 0.001)
+    decimals = 2 if entry_val > 10 else 4
+
+    if inter["sweep_prev_low"] or inter["true_break_high"]:
+        action_decision = "🟢 BUY (লং এন্ট্রি কনফার্মড)"
+        trade_dir = "BUY"
+        is_bull_setup = True
+        sl_val = round(curr["low"] - (atr_val * 0.3), decimals)
+        risk = max(entry_val - sl_val, 0.0001)
+        tp1_val = round(entry_val + (risk * 1.5), decimals)
+        tp2_val = round(entry_val + (risk * 2.5), decimals)
+    elif inter["sweep_prev_high"] or inter["true_break_low"]:
+        action_decision = "🔴 SELL (শর্ট এন্ট্রি কনফার্মড)"
+        trade_dir = "SELL"
+        is_bull_setup = False
+        sl_val = round(curr["high"] + (atr_val * 0.3), decimals)
+        risk = max(sl_val - entry_val, 0.0001)
+        tp1_val = round(entry_val - (risk * 1.5), decimals)
+        tp2_val = round(entry_val - (risk * 2.5), decimals)
+    else:
+        action_decision = "⏳ WAIT (কনফার্মেশনের জন্য অপেক্ষা করুন)"
+        trade_dir = "WAIT"
+        is_bull_setup = curr["is_bullish"]
+        sl_val = round(curr["low"] - (atr_val * 0.5), decimals) if is_bull_setup else round(curr["high"] + (atr_val * 0.5), decimals)
+        tp1_val = round(entry_val + (atr_val * 1.5), decimals) if is_bull_setup else round(entry_val - (atr_val * 1.5), decimals)
+        tp2_val = round(entry_val + (atr_val * 2.5), decimals) if is_bull_setup else round(entry_val - (atr_val * 2.5), decimals)
+
+    trade_params = {
+        "entry": entry_val,
+        "sl": sl_val,
+        "tp1": tp1_val,
+        "tp2": tp2_val,
+        "direction": trade_dir,
+        "action": action_decision,
+        "is_bullish": is_bull_setup
+    }
+
+    # 5. Generate Annotated Candlestick Chart Image (PNG)
+    chart_path = generate_candlestick_chart(
+        candles=candles,
+        ticker=ticker,
+        display_name=display_name,
+        timeframe=timeframe,
+        trade_params=trade_params
+    )
+
+    # 6. Format factual context for LLM
     context_text = f"""
 ASSET: {display_name} ({ticker})
 TIMEFRAME: {timeframe}
@@ -650,6 +923,13 @@ CURRENT PRICE: {curr['close']}
 - Trend Alignment: {'Bullish Stack (9>21>50)' if inds['ema_9'] > inds['ema_21'] > inds['ema_50'] else ('Bearish Stack (9<21<50)' if inds['ema_9'] < inds['ema_21'] < inds['ema_50'] else 'Consolidation / Mixed')}
 - ATR (14): {inds['atr_14']} (volatility buffer)
 - Relative Volume (RVOL): {inds['rvol']}x
+
+6. QUANTITATIVE SETUP:
+- Action Decision: {action_decision}
+- Entry Price: {entry_val}
+- Stop Loss: {sl_val}
+- Take Profit 1: {tp1_val} (1:1.5 RR)
+- Take Profit 2: {tp2_val} (1:2.5 RR)
 """
 
     prompt = f"""You are an elite Institutional Price Action Specialist, ICT (Inner Circle Trader), and Forensic Candlestick Quantitative Analyst.
@@ -683,18 +963,12 @@ Structure your response using these exact sections:
 
 🚀 *৫. হাই-কনভিকশন ট্রেডিং সেটআপ (Precision Actionable Trade Setup)*
 Based on the forensic anatomy and ATR ({inds['atr_14']}), provide precise trading parameters:
-- ⚡ **Action / Decision (সুনির্দিষ্ট সিদ্ধান্ত):**
-  * 🟢 **BUY (এখনই লং এন্ট্রি):** Use ONLY when a clear bullish liquidity sweep (Turtle soup long) or confirmed breakout with strong body is present.
-  * 🔴 **SELL (এখনই শর্ট এন্ট্রি):** Use ONLY when a clear bearish liquidity sweep (Turtle soup short) or confirmed breakdown with strong body is present.
-  * ⏳ **WAIT (কনফার্মেশনের জন্য অপেক্ষা করুন):** Use if the market is in an inside bar, indecision doji, low volume chop, or midway inside a consolidation range. If WAIT is chosen, you MUST state:
-    - 🔍 **কেন অপেক্ষা করবেন:** (e.g. মার্কেট বর্তমানে ইনসাইড বার কম্প্রেশন বা নো-ট্রেড জোনে রয়েছে)
-    - 🟢 **বাই কনফার্মেশন লেভেল (Buy Trigger Level):** (প্রাইস কোন লেভেলের উপরে ব্রেক করে ক্যান্ডেল ক্লোজ হলে বাই করবেন)
-    - 🔴 **সেল কনফার্মেশন লেভেল (Sell Trigger Level):** (প্রাইস কোন লেভেলের নিচে ব্রেক করে ক্যান্ডেল ক্লোজ হলে সেল করবেন)
-- 🎯 **Entry Price Zone (OTE):** (সুনির্দিষ্ট সংখ্যাসূচক এন্ট্রি প্রাইস বা OTE জোন, যেমন: `{curr['close']}` বা পুলব্যাক রেঞ্জ)
-- 🛑 **Stop Loss (SL):** (বাধ্যতামূলক সুনির্দিষ্ট সংখ্যাসূচক ইনভ্যালিডেশন প্রাইস - সুইপ উইক ও ATR বাফারসহ, যেমন: `{round(curr['low'] - (inds['atr_14'] * 0.3), 2) if curr['is_bullish'] else round(curr['high'] + (inds['atr_14'] * 0.3), 2)}`)
-- 🏁 **Take Profit 1 (TP1):** (বাধ্যতামূলক সুনির্দিষ্ট সংখ্যাসূচক টেক প্রফিট প্রাইস - মিনিমাম 1:1.5 Risk-to-Reward)
-- 🏆 **Take Profit 2 (TP2):** (বাধ্যতামূলক সুনির্দিষ্ট সংখ্যাসূচক টেক প্রফিট প্রাইস - 1:2.5+ Risk-to-Reward মেজর আনটাচড লেভেল)
-- ⚖️ **Risk-to-Reward Ratio (RRR):** (যেমন 1:2.5)
+- ⚡ **Action / Decision (সুনির্দিষ্ট সিদ্ধান্ত):** {action_decision}
+- 🎯 **Entry Price Zone (OTE):** `{entry_val}`
+- 🛑 **Stop Loss (SL):** `{sl_val}` (বাধ্যতামূলক সুনির্দিষ্ট সংখ্যাসূচক ইনভ্যালিডেশন প্রাইস - সুইপ উইক ও বাফারসহ)
+- 🏁 **Take Profit 1 (TP1):** `{tp1_val}` (বাধ্যতামূলক সুনির্দিষ্ট টেক প্রফিট - 1:1.5 RR)
+- 🏆 **Take Profit 2 (TP2):** `{tp2_val}` (বাধ্যতামূলক সুনির্দিষ্ট টেক প্রফিট - 1:2.5+ RR)
+- ⚖️ **Risk-to-Reward Ratio (RRR):** `1:2.5`
 - 📊 **Institutional Confluence Score:** (যেমন 85% Confluence)
 
 Write directly and clearly. Provide exact, specific numeric prices for Entry, SL, TP1, and TP2 so the trader can immediately set limit/stop orders without guesswork. Use bolding and bullet points for readability on Telegram. Do not include markdown code block quotes around the entire text.
@@ -706,34 +980,12 @@ Write directly and clearly. Provide exact, specific numeric prices for Entry, SL
         footer = f"\n\n───────────────\n📊 *Asset:* {display_name} | *Timeframe:* {timeframe}\n🤖 *Engine:* {provider_used} (Institutional Microstructure)"
         if is_default_tf:
             footer += (
-                f"\n\n⏱️ *অন্যান্য টাইমফ্রেম সুইচ:* `/signal {symbol_query} 5m` | `/signal {symbol_query} 1h` | `/signal {symbol_query} 4h` | `/signal {symbol_query} 1d`\n"
-                f"💡 *টিপ:* ডিফল্ট হিসেবে ইন্ট্রাডে 15m বিশ্লেষণ দেওয়া হয়েছে। অন্য টাইমফ্রেম চাইলে মুখে বা লিখে বলুন: '১ ঘণ্টার এনালাইসিস', '৪ ঘণ্টার চার্ট' বা '৫ মিনিট'।"
+                f"\n\n⏱️ *অন্যান্য টাইমফ্রেম সুইচ:* `/chart {symbol_query} 5m` | `/chart {symbol_query} 1h` | `/chart {symbol_query} 4h` | `/chart {symbol_query} 1d`\n"
+                f"💡 *টিপ:* ডিফল্ট হিসেবে ইন্ট্রাডে 15m চার্ট ও বিশ্লেষণ দেওয়া হয়েছে। অন্য টাইমফ্রেম চাইলে সরাসরি কমান্ড দিন।"
             )
-        return report_text + footer
+        return (report_text + footer, chart_path)
     except Exception as e:
         logger.error(f"Error generating candle dissection with LLM: {e}")
-        action_decision = "⏳ WAIT (কনফার্মেশনের জন্য অপেক্ষা করুন)"
-        entry_price = curr['close']
-        atr_val = inds.get('atr_14', 1.0)
-        decimals = 2 if entry_price > 10 else 4
-
-        if inter['sweep_prev_low'] or inter['true_break_high']:
-            action_decision = "🟢 BUY (লং এন্ট্রি কনফার্মড)"
-            sl_price = round(curr['low'] - (atr_val * 0.3), decimals)
-            risk = max(entry_price - sl_price, 0.0001)
-            tp1_price = round(entry_price + (risk * 1.5), decimals)
-            tp2_price = round(entry_price + (risk * 2.5), decimals)
-        elif inter['sweep_prev_high'] or inter['true_break_low']:
-            action_decision = "🔴 SELL (শর্ট এন্ট্রি কনফার্মড)"
-            sl_price = round(curr['high'] + (atr_val * 0.3), decimals)
-            risk = max(sl_price - entry_price, 0.0001)
-            tp1_price = round(entry_price - (risk * 1.5), decimals)
-            tp2_price = round(entry_price - (risk * 2.5), decimals)
-        else:
-            sl_price = round(curr['low'] - (atr_val * 0.5), decimals)
-            tp1_price = round(entry_price + (atr_val * 1.5), decimals)
-            tp2_price = round(entry_price + (atr_val * 2.5), decimals)
-
         fallback_msg = f"""
 🔬 *{display_name} ({timeframe}) ক্যান্ডেল ব্যবচ্ছেদ*
 
@@ -745,19 +997,24 @@ Write directly and clearly. Provide exact, specific numeric prices for Entry, SL
 • ভলিউম অনুপাত (RVOL): *{inds['rvol']}x*
 
 🎯 *সিদ্ধান্ত (Action):* *{action_decision}*
-🎯 *এন্ট্রি জোন (Entry):* `{entry_price}`
-🛑 *স্টপ লস (SL):* `{sl_price}`
-🏁 *টার্গেট ১ (TP1):* `{tp1_price}` (1:1.5 RR)
-🏆 *টার্গেট ২ (TP2):* `{tp2_price}` (1:2.5 RR)
+🎯 *এন্ট্রি জোন (Entry):* `{entry_val}`
+🛑 *স্টপ লস (SL):* `{sl_val}`
+🏁 *টার্গেট ১ (TP1):* `{tp1_val}` (1:1.5 RR)
+🏆 *টার্গেট ২ (TP2):* `{tp2_val}` (1:2.5 RR)
 ⚖️ *রিস্ক-টু-রিওয়ার্ড (RRR):* `1:2.5`
 """
         if is_default_tf:
             fallback_msg += (
                 f"\n───────────────\n"
-                f"⏱️ *অন্যান্য টাইমফ্রেম:* `/signal {symbol_query} 5m` | `/signal {symbol_query} 1h` | `/signal {symbol_query} 4h`\n"
-                f"💡 *টিপ:* ডিফল্ট হিসেবে 15m বিশ্লেষণ দেওয়া হয়েছে। ১ ঘণ্টা বা ৪ ঘণ্টা দেখতে সরাসরি বলুন।"
+                f"⏱️ *অন্যান্য টাইমফ্রেম:* `/chart {symbol_query} 5m` | `/chart {symbol_query} 1h` | `/chart {symbol_query} 4h`\n"
+                f"💡 *টিপ:* ডিফল্ট হিসেবে 15m বিশ্লেষণ দেওয়া হয়েছে। অন্য টাইমফ্রেম দেখতে সরাসরি কমান্ড দিন।"
             )
-        return fallback_msg
+        return (fallback_msg, chart_path)
+
+def generate_candle_dissection_report(symbol_query: str, timeframe: str = "15m", is_default_tf: bool = False) -> str:
+    """Backwards-compatible wrapper returning report text string."""
+    report_text, _ = generate_candle_dissection_report_with_chart(symbol_query, timeframe, is_default_tf)
+    return report_text
 
 # ----------------- Automated Intraday Scanner for High Conviction Setups ----------------- #
 
@@ -766,14 +1023,21 @@ _ALERTED_CANDLES = set()
 
 def scan_high_conviction_setups() -> List[Dict[str, Any]]:
     """
-    Scans priority assets (Gold, BTC, EUR/USD) for high-probability liquidity sweep reversals
+    Scans major global assets (Metals, Crypto, Indices, Oil, Forex) for high-probability liquidity sweep reversals
     (Turtle Soup setups: broke previous High/Low, formed >= 40% rejection wick, and closed inside range).
+    Renders an annotated candlestick chart image for each confirmed alert.
     """
     watch_list = [
         ("gold", "GC=F", "Gold (XAU/USD)"),
+        ("silver", "SI=F", "Silver (XAG/USD)"),
         ("btc", "BTC-USD", "Bitcoin (BTC/USD)"),
+        ("eth", "ETH-USD", "Ethereum (ETH/USD)"),
+        ("nasdaq", "NQ=F", "Nasdaq 100 (US100)"),
+        ("sp500", "ES=F", "S&P 500 (US500)"),
+        ("oil", "CL=F", "Crude Oil (WTI)"),
         ("eurusd", "EURUSD=X", "EUR/USD"),
-        ("eth", "ETH-USD", "Ethereum (ETH/USD)")
+        ("gbpusd", "GBPUSD=X", "GBP/USD"),
+        ("usdjpy", "JPY=X", "USD/JPY")
     ]
 
     detected_alerts = []
@@ -781,11 +1045,10 @@ def scan_high_conviction_setups() -> List[Dict[str, Any]]:
     for alias, ticker, name in watch_list:
         try:
             candles = fetch_candles(ticker, interval="15m", range_str="1d")
-            if not candles or len(candles) < 3:
+            if not candles or len(candles) < 5:
                 continue
 
-            # Check the most recently closed candle (candles[-2] or candles[-1])
-            # To be safe and avoid repaint, check candles[-2] (the fully completed candle)
+            # Check the most recently closed candle (candles[-2]) to avoid repaint
             closed_candle = candles[-2]
             prev_candle = candles[-3]
             candle_id = f"{ticker}_15m_{closed_candle['timestamp']}"
@@ -841,6 +1104,24 @@ def scan_high_conviction_setups() -> List[Dict[str, Any]]:
                     if is_bullish_sweep else
                     f"পূর্ববর্তী 15m ক্যান্ডেলের High ({prev_candle['high']}) সুইপ করে রিটেইল বায়ারদের ট্র্যাপ করে {anat['upper_wick_pct']}% আপার উইক নিয়ে ক্লোজ হয়েছে।"
                 )
+
+                # Render annotated chart for this setup
+                trade_params = {
+                    "entry": entry_val,
+                    "sl": sl_val,
+                    "tp1": tp1_val,
+                    "tp2": tp2_val,
+                    "direction": "BUY" if is_bullish_sweep else "SELL",
+                    "is_bullish": is_bullish_sweep
+                }
+                chart_path = generate_candlestick_chart(
+                    candles=candles,
+                    ticker=ticker,
+                    display_name=name,
+                    timeframe="15m",
+                    trade_params=trade_params
+                )
+
                 detected_alerts.append({
                     "ticker": ticker,
                     "name": name,
@@ -856,7 +1137,8 @@ def scan_high_conviction_setups() -> List[Dict[str, Any]]:
                     "setup_desc": setup_desc,
                     "high": closed_candle["high"],
                     "low": closed_candle["low"],
-                    "timestamp": closed_candle["time"]
+                    "timestamp": closed_candle["time"],
+                    "chart_path": chart_path
                 })
         except Exception as e:
             logger.warning(f"Scanner error for {ticker}: {e}")

@@ -171,7 +171,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• `/nextday` বা `/forecast` - সমস্ত রিলেটেড নিউজের গ্র্যাভিটি মার্কিং (১-১০ স্কেল) ও আগামীকালের মার্কেট মুভমেন্ট প্রেডিকশন (উপরে যাবে 📈 নাকি নিচে নামবে 📉)\n"
         f"• `/weekly` বা `/week` (বা `/forex_pdf`) - সপ্তাহ শুরুর আগের দিন পুরো সপ্তাহের প্রাতিষ্ঠানিক ইন্টেলিজেন্স ও প্রাইস মুভমেন্ট পূর্বাভাস রিপোর্ট\n"
         f"• `/gravity [সিম্বল]` বা `/predict [সিম্বল]` - নির্দিষ্ট কোনো অ্যাসেটের খবরের গ্র্যাভিটি বিশ্লেষণ (১-১০) ও পরবর্তী ডিরেকশন (যেমন: `/gravity gold`, `/gravity oil`, `/gravity nasdaq`)\n"
-        f"• `/ta [সিম্বল] [টাইমফ্রেম]` - লাইভ ক্যান্ডেলের নিখুঁত ব্যবচ্ছেদ (Dissection), ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল (যেমন `/ta gold`, `/ta btc 5m`)\n"
+        f"• `/chart [সিম্বল] [টাইমফ্রেম]` বা `/ta` - লাইভ ক্যান্ডেলস্টিক চার্ট ছবি (Photo) + ক্যান্ডেল ব্যবচ্ছেদ ও ট্রেডিং সিগন্যাল (Dissection), ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল (যেমন `/ta gold`, `/ta btc 5m`)\n"
         f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd` - লাইভ টেকনিক্যাল মেট্রিক্স, পর্যায়ক্রমিক খবরের গতিপথ ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন\n"
         f"• `/digest` - দৈনিক একীভূত ম্যাক্রো ডাইজেস্ট ও সেন্টিমেন্ট\n"
         f"• `/forecast_pdf` - চার্টসহ আগামীকালের মার্কেট পূর্বাভাস PDF\n"
@@ -203,7 +203,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• `/nextday` বা `/forecast` বা `/prediction`: সমস্ত রিলেটেড নিউজের গ্র্যাভিটি মার্কিং (১–১০ স্কেল), এক্সপেক্টেড রেঞ্জ ও আগামীকালের নিশ্চিত মার্কেট ডিরেকশন (উপরে যাবে 📈 নাকি নিচে নামবে 📉)।\n"
         f"• `/weekly` বা `/week` বা `/forex_pdf`: সপ্তাহ শুরুর আগের দিন রবিবার রাতে পুরো সপ্তাহের প্রাতিষ্ঠানিক গাইডলাইন, হাই-ইমপ্যাক্ট ইভেন্ট ও মাল্টি-অ্যাসেট মুভমেন্ট রোডম্যাপ।\n"
         f"• `/gravity [সিম্বল]` বা `/predict [সিম্বল]`: নির্দিষ্ট অ্যাসেটের খবরের গ্র্যাভিটি মার্কিং (১-১০) ও পরবর্তী মুভমেন্ট ভেক্টর (উদাহরণ: `/gravity gold`, `/gravity oil`, `/gravity nasdaq`, `/predict btc`)।\n"
-        f"• `/ta [সিম্বল] [টাইমফ্রেম]` বা `/signal`: ক্যান্ডেলস্টিকের মাইক্রোস্কোপিক ব্যবচ্ছেদ (Anatomy Breakdown), ইন্ট্রা-ক্যান্ডেল গঠনপ্রক্রিয়া, লিকুইডিটি সুইপ ও হাই-কনভিকশন এন্ট্রি/SL/TP সিগন্যাল। (উদাহরণ: `/ta`, `/ta btc`, `/ta gold 5m`, `/ta eurusd 1h`)\n"
+        f"• `/chart [সিম্বল] [টাইমফ্রেম]` বা `/ta` বা `/signal`: লাইভ ক্যান্ডেলস্টিক চার্ট ইমেজ (EMA 9/21/50, Support/Resistance, Entry, SL ও TP লেভেল মার্ক করা) + ক্যান্ডেলস্টিকের মাইক্রোস্কোপিক ব্যবচ্ছেদ (Anatomy Breakdown), ইন্ট্রা-ক্যান্ডেল গঠনপ্রক্রিয়া, লিকুইডিটি সুইপ ও হাই-কনভিকশন এন্ট্রি/SL/TP সিগন্যাল। (উদাহরণ: `/ta`, `/ta btc`, `/ta gold 5m`, `/ta eurusd 1h`)\n"
         f"• `/market [সিম্বল]` বা সরাসরি `/gold`, `/nasdaq`, `/sp500`, `/dow`, `/btc`, `/eth`, `/oil`, `/eurusd`: বর্তমান বাজার পরিস্থিতি, লাইভ টেকনিক্যাল মেট্রিক্স (RSI, EMA, ATR), খবরের কালানুক্রমিক গতিপথ ও শর্ট/লং টার্ম মুভমেন্ট প্রেডিকশন।\n"
         f"• `/forecast_pdf`: চার্ট ও গ্রাফসহ আগামীকালের প্রাতিষ্ঠানিক টেকনিক্যাল রেঞ্জ PDF রিপোর্ট।\n"
         f"• `/news`: সর্বশেষ ব্রেকিং ফরেক্স নিউজ ও এআই মার্কেট এনালাইসিস (ইমপ্যাক্ট, পেয়ার, সময়, দিক ও পরামর্শ)।\n"
@@ -785,17 +785,17 @@ async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     symbol, timeframe, is_default_tf = technical_analysis_service.parse_ta_args(context.args if context.args else [])
     ticker, display_name = technical_analysis_service.resolve_symbol(symbol)
 
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.UPLOAD_PHOTO)
     status_msg = await update.message.reply_text(
-        f"🔬 *{display_name} ({timeframe})* এর রিয়েল-টাইম ক্যান্ডেল ব্যবচ্ছেদ, ইন্ট্রা-ক্যান্ডেল গঠন ও ট্রেডিং সিগন্যাল তৈরি করা হচ্ছে...",
+        f"📊 *{display_name} ({timeframe})* এর লাইভ ক্যান্ডেলস্টিক চার্ট তৈরি ও টেকনিক্যাল অ্যানাটমি বিশ্লেষণ করা হচ্ছে...",
         parse_mode=ParseMode.MARKDOWN
     )
 
     try:
         loop = asyncio.get_running_loop()
-        report_text = await loop.run_in_executor(
+        report_text, chart_path = await loop.run_in_executor(
             None,
-            technical_analysis_service.generate_candle_dissection_report,
+            technical_analysis_service.generate_candle_dissection_report_with_chart,
             symbol,
             timeframe,
             is_default_tf
@@ -804,6 +804,21 @@ async def ta_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status_msg.delete()
         except Exception:
             pass
+
+        # Send chart photo first if available
+        if chart_path and chart_path.exists():
+            caption = f"📊 *{display_name} ({timeframe}) লাইভ ক্যান্ডেলস্টিক চার্ট*\n💡 নিচে বিস্তারিত ক্যান্ডেল অ্যানাটমি ও ট্রেডিং সেটআপ দেওয়া হলো:"
+            try:
+                with open(chart_path, "rb") as photo_file:
+                    await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=photo_file,
+                        caption=caption,
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+            except Exception as pe:
+                logger.warning(f"Could not send chart photo: {pe}")
+
         await send_split_message(context.bot, update.effective_chat.id, report_text, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         logger.error(f"Error in ta_command: {e}")
@@ -1435,9 +1450,19 @@ async def scheduled_technical_scanner_job(context: ContextTypes.DEFAULT_TYPE):
                     f"🔍 *সেটআপ ব্যবচ্ছেদ:*\n{alert['setup_desc']}\n\n"
                     f"💡 বিস্তারিত ক্যান্ডেল অ্যানাটমি দেখতে `/ta {alert['ticker']}` কমান্ড দিন।"
                 )
+                chart_p = alert.get("chart_path")
                 for uid in target_uids:
                     try:
-                        await context.bot.send_message(chat_id=uid, text=msg, parse_mode=ParseMode.MARKDOWN)
+                        if chart_p and chart_p.exists():
+                            with open(chart_p, "rb") as p_file:
+                                await context.bot.send_photo(
+                                    chat_id=uid,
+                                    photo=p_file,
+                                    caption=msg[:1024],
+                                    parse_mode=ParseMode.MARKDOWN
+                                )
+                        else:
+                            await context.bot.send_message(chat_id=uid, text=msg, parse_mode=ParseMode.MARKDOWN)
                     except Exception as err:
                         logger.warning(f"Failed to dispatch technical alert to {uid}: {err}")
     except Exception as e:
@@ -1520,6 +1545,7 @@ def main():
     app.add_handler(CommandHandler("ta", ta_command))
     app.add_handler(CommandHandler("signal", ta_command))
     app.add_handler(CommandHandler("candledissect", ta_command))
+    app.add_handler(CommandHandler("chart", ta_command))
     app.add_handler(CommandHandler("voice", voice_command))
     app.add_handler(CommandHandler("tts", voice_command))
 

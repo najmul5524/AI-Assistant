@@ -130,24 +130,15 @@ def classify_forexfactory_impact(
 ) -> str:
     """
     Intelligently determines impact level (high, medium, low) in real time (zero lag).
-    Solves the ForexFactory delay/miss problem where 65%+ of fresh news arrives with raw impact="" (empty)
-    and is only tagged by ForexFactory moderators 10-20 minutes later (or never).
+    Ensures that NO market-moving ForexFactory news is dropped or delayed.
     """
-    raw = (raw_impact or "").strip().lower()
-    if raw == "low":
-        return "low"
-    if raw == "high":
-        return "high"
-    if raw == "medium":
-        return "medium"
-
     text = html_lib.unescape(f"{title} {preview} {source}").lower()
 
     # 1. Filter obvious fluff/celebrity/lifestyle/sports topics with zero market relevance
     if re.search(r'\b(onlyfans|suburban wives|celebrity|divorce|hollywood|sports|nfl|nba|movie|movies|fashion|mansion|lifestyle|maisonette|billionaire)\b', text, re.I):
         return "low"
 
-    # 2. High Impact Catalysts
+    # 2. High Impact Catalysts (Evaluated first so critical headlines like Trump/Iran/Tariffs are never falsely downgraded)
     high_pattern = (
         r'\b(fed|federal reserve|powell|fomc|rate hike|rate cut|interest rate|neutral rate|monetary policy|'
         r'ecb|lagarde|boe|bailey|boj|ueda|rba|bullock|boc|macklem|snb|'
@@ -158,10 +149,16 @@ def classify_forexfactory_impact(
         r'opec|opec\+|crude|oil|brent|wti|spr|refinery|diesel export|fuel export|'
         r'tariff|tariffs|trade war|debt ceiling|default|bailout|liquidity|bond carnage|'
         r'yield surge|bond selloff|bond rout|currency intervention|crash|plunge|surge|'
-        r'record high|record low|all-time high)\b'
+        r'record high|record low|all-time high|trump|biden)\b'
     )
     if re.search(high_pattern, text, re.I):
         return "high"
+
+    raw = (raw_impact or "").strip().lower()
+    if raw == "high":
+        return "high"
+    if raw == "medium":
+        return "medium"
 
     # 3. Medium Impact Catalysts
     med_pattern = (
@@ -172,7 +169,8 @@ def classify_forexfactory_impact(
         r'consumer confidence|michigan sentiment|housing starts|home sales|building permits|'
         r'dollar|dxy|euro|yen|pound|sterling|swiss franc|gold|xau|silver|xag|nasdaq|s&p|dow|bitcoin|crypto|btc|eth|'
         r'treasury|treasuries|yields|yield|bond|bonds|sovereign bond|rally|reversal|correction|selloff|'
-        r'trade balance|trade deficit|current account|industrial production|manufacturing|durable goods|factory orders|exports|imports)\b'
+        r'trade balance|trade deficit|current account|industrial production|manufacturing|durable goods|factory orders|exports|imports|'
+        r'moody|fitch|s&p rating|credit rating|outlook|forecast|deficit)\b'
     )
     if re.search(med_pattern, text, re.I):
         return "medium"
@@ -182,7 +180,10 @@ def classify_forexfactory_impact(
     if any(k in source.lower() for k in inst_sources):
         return "medium"
 
-    # Fallback for financial news on ForexFactory: medium, allowing AI to verify market relevance
+    if raw == "low":
+        return "low"
+
+    # Fallback for financial news on ForexFactory: medium
     return "medium"
 
 def fetch_forexfactory_direct_news(limit: int = 50) -> List[Dict[str, Any]]:
@@ -492,43 +493,46 @@ def fetch_latest_forex_news(limit: int = 35) -> List[Dict[str, Any]]:
 
     return articles[:limit]
 
-def analyze_forex_news_with_ai(headline: str, snippet: str = "") -> str:
+def analyze_forex_news_with_ai(headline: str, snippet: str = "", impact_level: str = "medium") -> str:
     """
-    Leverages multi-tier LLM to analyze the breaking Forex news headline.
-    Strictly assesses if news is High (🔴) or Medium (🟠) with direct & long-term market influence.
-    If Low (🟡), outputs concise Low classification so it can be filtered out from alerts.
-    If High/Medium, provides full institutional breakdown of Bullish/Bearish instruments and Next Catalyst in BST.
+    Leverages multi-tier LLM to analyze breaking Forex Factory news headlines in real time.
+    Provides full institutional breakdown with:
+    - Importance & Impact
+    - News Gravity Score (1-10 scale)
+    - Bullish & Bearish instruments
+    - Next Catalyst Date and Time in Bangladesh Time (BST)
+    - Direct & Long-term Impact
+    - Actionable Trader Notes
     """
     llm = get_llm()
     dhaka_tz = zoneinfo.ZoneInfo("Asia/Dhaka")
     dhaka_now = datetime.datetime.now(dhaka_tz).strftime("%I:%M %p, %d %B %Y (%A)")
 
-    prompt = f"""You are a Senior Wall Street Institutional Forex & Macroeconomic Analyst.
+    impact_label = "HIGH (🔴)" if str(impact_level).lower() == "high" else "MEDIUM (🟠)"
+
+    prompt = f"""You are an elite Wall Street Institutional Forex & Macroeconomic Analyst and Quantitative Strategist.
 Current Bangladesh Time: {dhaka_now} (BST / GMT+6).
-A breaking financial news headline has just appeared on Forex Factory:
+A verified High/Medium impact financial news headline has just appeared on Forex Factory:
 Headline: "{headline}"
 Context: "{snippet[:300] if snippet else 'N/A'}"
+Impact Classification: {impact_label}
 
-FIRST, evaluate if this headline represents High Impact (🔴) or Medium Impact (🟠) with direct & long-term market influence (e.g. Interest rates, Central banks, Inflation CPI/PCE, NFP, GDP, Geopolitics, Tariffs, Currency intervention).
-If this news is Low Impact (🟡), educational, theoretical, gossip, or has NO direct market-moving significance, output ONLY:
-🚨 **গুরুত্ব (Importance):** Low 🟡 — [১ বাক্যে কারণ]
-(No further sections needed).
+Provide a comprehensive, real-time institutional analysis in professional Bengali with institutional English terms in parentheses:
 
-IF AND ONLY IF this is High 🔴 or Medium 🟠 impact news, provide a crisp, actionable analysis in professional Bengali with these exact sections:
+1. 🚨 **গুরুত্ব ও ইমপ্যাক্ট (Importance):** {impact_label} — সরাসরি ও দীর্ঘমেয়াদী প্রভাবের ১ বাক্যে প্রাতিষ্ঠানিক সারসংক্ষেপ
+2. ⚖️ **নিউজ গ্র্যাভিটি স্কোর (Gravity Score: ১–১০ স্কেল):** [১–১০ স্কেলে সুনির্দিষ্ট স্কোর, যেমন: ৮.৫/১০] — [কেন এটি উচ্চ/মাঝারি প্রভাবক]
+3. 🟢 **কোন কোন ইন্সট্রুমেন্ট উপরে যাবে (Bullish 📈):**
+   - 📈 [নির্দিষ্ট অ্যাসেট, যেমন: Gold (XAU/USD), EUR/USD, Crude Oil ইত্যাদি] — কেন উপরে যাবে তার কারণ
+4. 🔴 **কোন কোন ইন্সট্রুমেন্ট নিচের দিকে যাবে (Bearish 📉):**
+   - 📉 [নির্দিষ্ট অ্যাসেট, যেমন: US Dollar (DXY), USD/JPY, S&P 500 ইত্যাদি] — কেন নিচে নামবে তার কারণ
+5. ⏱️ **পরবর্তী ফলো-আপ ও সময়সূচি (Next Follow-up - Date & Time in BST):**
+   - [এই সংবাদের ধারাবাহিকতায় পরবর্তী অফিশিয়াল মিটিং, স্পিচ বা ফলো-আপ ডেটা রিলিজের সুনির্দিষ্ট তারিখ ও সময় বাংলাদেশ সময় অনুযায়ী (যেমন: ২৬ অক্টোবর ২০২৬, সোমবার রাত ০৮:৩০ PM BST)। অবশ্যই সুনির্দিষ্ট দিন, তারিখ ও সময় উল্লেখ থাকবে।]
+6. ⏳ **সরাসরি ও দীর্ঘমেয়াদী প্রভাব (Direct & Long-term Impact):**
+   - [মার্কেটে তাৎক্ষণিক কী প্রভাব পড়বে এবং আগামী দিন বা সপ্তাহে দীর্ঘমেয়াদী প্রভাব কী হবে, মুভমেন্ট রেঞ্জ ও পিপস]
+7. 💡 **ট্রেডারদের করণীয় ও সতর্কতা (Actionable Trader Note):**
+   - [ট্রেডারদের জন্য সংক্ষিপ্ত ও সুনির্দিষ্ট সতর্কবার্তা ও রিস্ক ম্যানেজমেন্ট]
 
-1. 🚨 **গুরুত্ব ও ইমপ্যাক্ট (Importance):** [High 🔴 / Medium 🟠] — সরাসরি ও দীর্ঘমেয়াদী প্রভাবের ১ বাক্যে সারসংক্ষেপ
-2. 🟢 **কোন কোন ইন্সট্রুমেন্ট উপরে যাবে (Bullish / Upward Bias):**
-   - 📈 [ইন্সট্রুমেন্ট, যেমন: Gold (XAU/USD), EUR/USD, GBP/USD, USD Index ইত্যাদি] — কেন উপরে যাবে তার কারণ
-3. 🔴 **কোন কোন ইন্সট্রুমেন্ট নিচের দিকে যাবে (Bearish / Downward Bias):**
-   - 📉 [ইন্সট্রুমেন্ট, যেমন: USD/JPY, US Dollar (DXY), Crude Oil ইত্যাদি] — কেন নিচে নামবে তার কারণ
-4. ⏱️ **পরবর্তী ফলো-আপ ও সময়সূচি (Next Follow-up - Date & Time in BST):**
-   - [এই নিউজের ধারাবাহিকতায় পরবর্তী ফলো-আপ আপডেট কখন আসবে — যেমন: সেন্ট্রাল ব্যাংক পলিসি মিটিং, স্পিচ, প্রেস কনফারেন্স বা পরবর্তী গুরুত্বপূর্ণ ডেটা। **অবশ্যই বাংলাদেশ সময় (BST) অনুযায়ী সুনির্দিষ্ট তারিখ, দিন এবং সময় (ঘণ্টা-মিনিট) উল্লেখ করুন (যেমন: ২৯ সেপ্টেম্বর ২০২৬, মঙ্গলবার রাত ০৮:৩০ PM BST)**]
-5. ⏳ **সরাসরি ও দীর্ঘমেয়াদী প্রভাব (Direct & Long-term Impact):**
-   - [মার্কেটে সরাসরি তাৎক্ষণিক কী প্রভাব পড়বে এবং আগামী দিন বা সপ্তাহে দীর্ঘমেয়াদী প্রভাব কী হবে, মুভমেন্ট রেঞ্জ ও পিপস]
-6. 💡 **ট্রেডারদের করণীয় ও সতর্কতা (Actionable Trader Note):**
-   - [ট্রেডারদের জন্য সংক্ষিপ্ত ও সুনির্দিষ্ট সতর্কবার্তা]
-
-Keep it direct, professional, and clear with clean markdown bullet points."""
+Keep it direct, professional, authoritative, and structured with clean markdown bullet points."""
 
     try:
         response_text, provider_used, _ = llm.generate_response(prompt=prompt)
@@ -542,9 +546,11 @@ def format_news_telegram_alert(news_item: Dict[str, Any], ai_analysis: str) -> s
     title = news_item["title"]
     source = news_item.get("source", "Forex Factory")
     pub_date = news_item.get("pub_date_dhaka") or news_item.get("pub_date")
+    impact_val = news_item.get("impact", "medium").lower()
+    impact_badge = "🔴 HIGH IMPACT" if impact_val == "high" else "🟠 MEDIUM IMPACT"
 
     msg_lines = [
-        "⚡ *FOREX FACTORY REAL-TIME BREAKING NEWS & AI ANALYSIS*",
+        f"⚡ *FOREX FACTORY REAL-TIME NEWS & AI ANALYSIS* [{impact_badge}]",
         "",
         f"📰 *শিরোনাম:* `{title}`",
         f"🕒 *প্রকাশের সময়:* _{pub_date} (বাংলাদেশ সময়)_",
@@ -711,20 +717,14 @@ def check_and_alert_new_stories(telegram_context=None) -> int:
 
     processed_count = 0
     for art in fresh_unseen:
-        # Pre-filter: If ForexFactory explicitly marked impact as 'low', skip silently
-        if art.get("impact") == "low":
-            logger.info(f"Skipping ForexFactory explicit Low-impact news: {art['title']}")
+        impact_val = art.get("impact", "medium").lower()
+        if impact_val == "low":
+            logger.info(f"Skipping ForexFactory Low-impact news: {art['title']}")
             database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"], impact=art.get("impact", ""), description=art.get("description", ""))
             continue
 
-        logger.info(f"Analyzing fresh breaking Forex story: {art['title']} (Source: {art['source']})")
-        analysis = analyze_forex_news_with_ai(art["title"], art["description"])
-
-        # Strict Filter: ONLY High and Medium impact news are sent to Telegram!
-        if is_low_impact_analysis(analysis):
-            logger.info(f"Filtered out low-impact / non-direct news from instant alert: {art['title']}")
-            database.mark_news_as_seen(art["news_id"], art["title"], art["link"], art["pub_date"], impact=art.get("impact", ""), description=art.get("description", ""))
-            continue
+        logger.info(f"Analyzing fresh breaking Forex story: {art['title']} (Source: {art['source']}, Impact: {impact_val})")
+        analysis = analyze_forex_news_with_ai(art["title"], art["description"], impact_level=impact_val)
 
         # Format and dispatch High/Medium Impact Alert immediately
         alert_msg = format_news_telegram_alert(art, analysis)
